@@ -1,0 +1,10 @@
+wood
+plastic
+glass
+metal
+cardboard
+paper
+nylon
+ceramic
+sponge
+chocolate

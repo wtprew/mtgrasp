@@ -1,0 +1,13 @@
+tool
+utensil
+stationary
+fruit
+box
+bottle
+jar
+bag
+clothes
+eyewear
+shoe
+nail polish
+
