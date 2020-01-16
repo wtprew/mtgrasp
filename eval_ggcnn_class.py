@@ -17,8 +17,10 @@ def parse_args():
     parser.add_argument('--network', type=str, help='Path to saved network to evaluate')
 
     # Dataset & Data & Training
-    parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard")')
+    parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard" or "cornell_coco)')
     parser.add_argument('--dataset-path', type=str, help='Path to dataset')
+    parser.add_argument('--json-file', type=str, help='Path to image classifications', default='annotations/coco.json')
+    parser.add_argument('--annotation-path', type=str, help='Directory to object classes', default='annotations/objects.txt')
     parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for evaluation (1/0)')
     parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for evaluation (0/1)')
     parser.add_argument('--augment', action='store_true', help='Whether data augmentation should be applied')
@@ -44,7 +46,7 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-
+    
     # Load Network
     net = torch.load(args.network)
     device = torch.device("cuda:0")
@@ -52,9 +54,12 @@ if __name__ == '__main__':
     # Load Dataset
     logging.info('Loading {} Dataset...'.format(args.dataset.title()))
     Dataset = get_dataset(args.dataset)
-    test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
-                           random_rotate=args.augment, random_zoom=args.augment,
-                           include_depth=args.use_depth, include_rgb=args.use_rgb)
+    if args.dataset == 'cornell' or 'jacquard':
+        test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
+                            random_rotate=args.augment, random_zoom=args.augment,
+                            include_depth=args.use_depth, include_rgb=args.use_rgb)
+    elif args.dataset == 'cornell_coco':
+        test_dataset = Dataset(args.dataset_path, args.json_file, split=args.split)
     test_data = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=1,
