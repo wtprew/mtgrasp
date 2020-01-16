@@ -29,7 +29,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Train GG-CNN')
 
     # Network
-    parser.add_argument('--network', type=str, default='ggcnn', help='Network Name in .models')
+    parser.add_argument('--network', type=str, default='mtgcnn', help='Network Name in .models')
 
     # Dataset & Data & Training
     parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard")')
