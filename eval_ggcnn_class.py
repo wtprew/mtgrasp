@@ -19,7 +19,7 @@ def parse_args():
 	# Dataset & Data & Training
 	parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard" or "cornell_coco)')
 	parser.add_argument('--dataset-path', type=str, help='Path to dataset')
-	parser.add_argument('--json-file', type=str, help='Path to image classifications', default='annotations/coco.json')
+	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
 	parser.add_argument('--annotation-path', type=str, help='Directory to object classes', default='annotations/objects.txt')
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for evaluation (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for evaluation (0/1)')
@@ -36,7 +36,7 @@ def parse_args():
 
 	args = parser.parse_args()
 
-	if args.dataset == 'cornell_coco' and args.json_file == None:
+	if args.dataset == 'cornell_coco' and args.json == None:
 		raise ValueError('--must include an annotation file if using classification network')
 	if args.jacquard_output and args.dataset != 'jacquard':
 		raise ValueError('--jacquard-output can only be used with the --dataset jacquard option.')
@@ -48,21 +48,23 @@ def parse_args():
 
 if __name__ == '__main__':
 	args = parse_args()
-	
+
 	# Load Network
 	net = torch.load(args.network)
-	device = torch.device(if torch.cuda.is_available(): 'cuda:0' else 'cpu')
+	device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 	# Load Dataset
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
-	if args.dataset == 'cornell' or 'jacquard':
+	import pdb
+	pdb.set_trace()
+	if args.dataset == 'cornell_coco':
+		test_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
+							include_rgb=args.use_rgb, include_depth=args.use_depth)
+	elif args.dataset == 'cornell' or 'jacquard':
 		test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
 							random_rotate=args.augment, random_zoom=args.augment,
 							include_depth=args.use_depth, include_rgb=args.use_rgb)
-	elif args.dataset == 'cornell_coco':
-		test_dataset = Dataset(args.dataset_path, args.json_file, start=args.split, end=1.0
-							include_rgb=args.use_rgb, include_depth=args.use_depth)
 	test_data = torch.utils.data.DataLoader(
 		test_dataset,
 		batch_size=1,
@@ -71,7 +73,7 @@ if __name__ == '__main__':
 	)
 	logging.info('Done')
 
-	results = {'correct': 0, 'failed': 0}
+	graspresults = {'correct': 0, 'failed': 0}
 
 	if args.jacquard_output:
 		jo_fn = args.network + '_jacquard_output.txt'
@@ -79,7 +81,10 @@ if __name__ == '__main__':
 			pass
 
 	with torch.no_grad():
-		for idx, (x, y, didx, rot, zoom) in enumerate(test_data):
+		for idx, (x, y, didx,) in enumerate(test_data):
+			import pdb
+			pdb.set_trace()
+
 			logging.info('Processing {}/{}'.format(idx+1, len(test_data)))
 			xc = x.to(device)
 			yc = [yi.to(device) for yi in y]
@@ -89,14 +94,14 @@ if __name__ == '__main__':
 														lossd['pred']['sin'], lossd['pred']['width'])
 
 			if args.iou_eval:
-				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx, rot, zoom),
+				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx),
 												   no_grasps=args.n_grasps,
 												   grasp_width=width_img,
 												   )
 				if s:
-					results['correct'] += 1
+					graspresults['correct'] += 1
 				else:
-					results['failed'] += 1
+					graspresults['failed'] += 1
 
 			if args.jacquard_output:
 				grasps = grasp.detect_grasps(q_img, ang_img, width_img=width_img, no_grasps=1)
@@ -111,9 +116,9 @@ if __name__ == '__main__':
 									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img)
 
 	if args.iou_eval:
-		logging.info('IOU Results: %d/%d = %f' % (results['correct'],
-							  results['correct'] + results['failed'],
-							  results['correct'] / (results['correct'] + results['failed'])))
+		logging.info('IOU Results: %d/%d = %f' % (graspresults['correct'],
+							  graspresults['correct'] + graspresults['failed'],
+							  graspresults['correct'] / (graspresults['correct'] + graspresults['failed'])))
 
 	if args.jacquard_output:
 		logging.info('Jacquard output saved to {}'.format(jo_fn))

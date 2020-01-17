@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -14,12 +15,13 @@ def objects(fname):
 			count +=1
 	return count
 
+num_classes = objects(class_file)
 
 class MTGCNN(nn.Module):
 	"""
 	extension of the GG-CNN with a classification branch
 	"""
-	def __init__(self, input_channels=1):
+	def __init__(self, input_channels=1, num_classes=70):
 		super().__init__()
 		self.conv1 = nn.Conv2d(input_channels, filter_sizes[0], kernel_sizes[0], stride=strides[0], padding=3)
 		self.conv2 = nn.Conv2d(filter_sizes[0], filter_sizes[1], kernel_sizes[1], stride=strides[1], padding=2)
@@ -28,20 +30,23 @@ class MTGCNN(nn.Module):
 		self.convt2 = nn.ConvTranspose2d(filter_sizes[3], filter_sizes[4], kernel_sizes[4], stride=strides[4], padding=2, output_padding=1)
 		self.convt3 = nn.ConvTranspose2d(filter_sizes[4], filter_sizes[5], kernel_sizes[5], stride=strides[5], padding=3, output_padding=1)
 
+		self.linear1 = nn.Linear(32*301*301, 256)
+		self.linear2 = nn.Linear(256, 256)
+		self.class_output = nn.Linear(256, num_classes)
+
 		self.pos_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.cos_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.sin_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.width_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 
-		self.linear1 = nn.Linear(filter_sizes[5], filter_sizes[5])
-		self.linear2 = nn.Linear(filter_sizes[5], filter_sizes[5])
-		self.softmax = nn.Softmax(objects(class_file))
+		self.softmax = nn.Softmax(dim=1)
 
 		for m in self.modules():
 			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
 				nn.init.xavier_uniform_(m.weight, gain=1)
 
 	def forward(self, x):
+		#shared network
 		x = F.relu(self.conv1(x))
 		x = F.relu(self.conv2(x))
 		x = F.relu(self.conv3(x))
@@ -50,17 +55,19 @@ class MTGCNN(nn.Module):
 		x = F.relu(self.convt3(x))
 
 		#linear layers for classification
-		y = F.relu(self.linear1(x))
+		y = torch.flatten(x, 1)
+		y = F.relu(self.linear1(y))
 		y = F.relu(self.linear2(y))
+		y = self.class_output(y)
 
 		pos_output = self.pos_output(x)
 		cos_output = self.cos_output(x)
 		sin_output = self.sin_output(x)
 		width_output = self.width_output(x)
 
-		class_output = self.softmax(y)
+		class_out = self.softmax(y)
 
-		return pos_output, cos_output, sin_output, width_output, class_output
+		return pos_output, cos_output, sin_output, width_output, class_out
 
 	def compute_loss(self, xc, yc):
 		y_pos, y_cos, y_sin, y_width = yc

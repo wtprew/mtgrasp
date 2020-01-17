@@ -10,13 +10,13 @@ from pycocotools.coco import COCO
 
 from utils.dataset_processing import grasp, image
 
-# from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split
 
 class CornellCocoDataset(torch.utils.data.Dataset):
 	"""
 	Dataset wrapper for the Cornell dataset and coco annotations.
 	"""
-	def __init__(self, file_path, json, split = 0.8, output_size=300, 
+	def __init__(self, file_path, json, start=0.0, end=1.0, output_size=300, 
 				include_rgb=True, include_depth=False, **kwargs):
 		"""
 		:param file_path: Cornell Dataset directory.
@@ -28,9 +28,11 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 
 		self.file_path = file_path
 		self.coco = COCO(json)
-		self.ids = list(self.coco.anns.keys())
+		self.ids = self.coco.getImgIds()
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))
+		
+		self.cats = self.coco.loadCats(self.coco.getCatIds())
 
 		rgbf = []
 		for k, v in self.coco.imgs.items():
@@ -38,7 +40,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 
 		depthf = [f.replace('r.png', 'd.tiff') for f in rgbf]
 		graspf = [f.replace('d.tiff', 'cpos.txt') for f in depthf]
-
+		
 		self.output_size = output_size
 		self.rgb_files = rgbf
 		self.depth_files = depthf
@@ -86,18 +88,13 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 			rgb_img.normalise()
 			rgb_img.img = rgb_img.img.transpose((2, 0, 1))
 		return rgb_img.img
-	
-	def get_anns(self, idx):
-		ann_id = self.ids[idx]
-		ann_bbox = self.coco.anns[ann_id]['bbox']
-		ann_bbox = np.array(ann_bbox)
-		target = self.coco.anns[ann_id]['category_id']
-		target = np.array([target])
-		return target, ann_bbox
 
 	def __getitem__(self, idx):
-		target, ann_bbox = self.get_anns(idx)
-		
+		coco = self.coco
+		img_id = self.ids[idx]
+		ann_ids = coco.getAnnIds(imgIds=img_id)
+		target = coco.loadAnns(ann_ids)
+
 		# Load the depth image
 		if self.include_depth:
 			depth_img = self.get_depth(idx)
@@ -130,7 +127,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		sin = self.numpy_to_torch(np.sin(2*ang_img))
 		width = self.numpy_to_torch(width_img)
 		
-		target = self.numpy_to_torch(target)
+		target = torch.tensor([target[0]['category_id']])
 
 		return x, (pos, cos, sin, width), idx, target
 
