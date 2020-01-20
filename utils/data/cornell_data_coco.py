@@ -129,7 +129,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		
 		target = torch.tensor([target[0]['category_id']])
 
-		return x, (pos, cos, sin, width), idx, target
+		return x, (pos, cos, sin, width, target), idx
 
 	def __len__(self):
 		return len(self.ids)

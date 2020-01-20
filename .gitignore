@@ -2,3 +2,5 @@ __pycache__
 .vscode
 train_ggcnn.py
 eval_ggcnn.py
+output
+tensorboard

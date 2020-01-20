@@ -9,7 +9,6 @@ from utils.data import get_dataset
 
 logging.basicConfig(level=logging.INFO)
 
-
 def parse_args():
 	parser = argparse.ArgumentParser(description='Evaluate GG-CNN')
 
@@ -45,9 +44,18 @@ def parse_args():
 
 	return args
 
+def objects(class_file):
+	objects = []
+	with open(class_file, 'r') as f:
+		for l in f:
+			objects.append(l.strip('\n'))
+		f.close()
+	return objects
 
 if __name__ == '__main__':
 	args = parse_args()
+
+	classes = None
 
 	# Load Network
 	net = torch.load(args.network)
@@ -56,11 +64,12 @@ if __name__ == '__main__':
 	# Load Dataset
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
-	import pdb
-	pdb.set_trace()
+
 	if args.dataset == 'cornell_coco':
+		classes = objects(args.annotation_path)
 		test_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
 							include_rgb=args.use_rgb, include_depth=args.use_depth)
+
 	elif args.dataset == 'cornell' or 'jacquard':
 		test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
 							random_rotate=args.augment, random_zoom=args.augment,
@@ -74,6 +83,7 @@ if __name__ == '__main__':
 	logging.info('Done')
 
 	graspresults = {'correct': 0, 'failed': 0}
+	classresults = {'correct': 0, 'failed': 0}
 
 	if args.jacquard_output:
 		jo_fn = args.network + '_jacquard_output.txt'
@@ -81,17 +91,23 @@ if __name__ == '__main__':
 			pass
 
 	with torch.no_grad():
-		for idx, (x, y, didx,) in enumerate(test_data):
-			import pdb
-			pdb.set_trace()
+		for idx, (x, y, didx) in enumerate(test_data):
 
 			logging.info('Processing {}/{}'.format(idx+1, len(test_data)))
 			xc = x.to(device)
 			yc = [yi.to(device) for yi in y]
+			import ipdb; ipdb.set_trace()
 			lossd = net.compute_loss(xc, yc)
 
 			q_img, ang_img, width_img = post_process_output(lossd['pred']['pos'], lossd['pred']['cos'],
 														lossd['pred']['sin'], lossd['pred']['width'])
+
+			#test classification
+			_, class_pred = torch.max(lossd['pred']['class'], 1)
+			if class_pred.item() == y[-1].item():
+				classresults['correct'] += 1
+			else:
+				classresults['failed'] += 1
 
 			if args.iou_eval:
 				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx),
@@ -102,6 +118,25 @@ if __name__ == '__main__':
 					graspresults['correct'] += 1
 				else:
 					graspresults['failed'] += 1
+			
+			# test classification for each category
+			# class_correct = list(0. for i in range(10))
+			# class_total = list(0. for i in range(10))
+			# with torch.no_grad():
+			#     for data in testloader:
+			#         images, labels = data
+			#         outputs = net(images)
+			#         _, predicted = torch.max(outputs, 1)
+			#         c = (predicted == labels).squeeze()
+			#         for i in range(4):
+			#             label = labels[i]
+			#             class_correct[label] += c[i].item()
+			#             class_total[label] += 1
+
+
+			# for i in range(10):
+			#     print('Accuracy of %5s : %2d %%' % (
+			#         classes[i], 100 * class_correct[i] / class_total[i]))
 
 			if args.jacquard_output:
 				grasps = grasp.detect_grasps(q_img, ang_img, width_img=width_img, no_grasps=1)
@@ -111,8 +146,8 @@ if __name__ == '__main__':
 						f.write(g.to_jacquard(scale=1024 / 300) + '\n')
 
 			if args.vis:
-				evaluation.plot_output(test_data.dataset.get_rgb(didx, rot, zoom, normalise=False),
-									   test_data.dataset.get_depth(didx, rot, zoom), q_img,
+				evaluation.plot_output(test_data.dataset.get_rgb(didx, normalise=False),
+									   test_data.dataset.get_depth(didx), q_img,
 									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img)
 
 	if args.iou_eval:
