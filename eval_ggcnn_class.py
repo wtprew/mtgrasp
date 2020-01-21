@@ -32,6 +32,7 @@ def parse_args():
 	parser.add_argument('--iou-eval', action='store_true', help='Compute success based on IoU metric.')
 	parser.add_argument('--jacquard-output', action='store_true', help='Jacquard-dataset style output')
 	parser.add_argument('--vis', action='store_true', help='Visualise the network output')
+	parser.add_argument('--classify', action='store_true', help='Classify outputs')
 
 	args = parser.parse_args()
 
@@ -96,18 +97,18 @@ if __name__ == '__main__':
 			logging.info('Processing {}/{}'.format(idx+1, len(test_data)))
 			xc = x.to(device)
 			yc = [yi.to(device) for yi in y]
-			import ipdb; ipdb.set_trace()
 			lossd = net.compute_loss(xc, yc)
 
 			q_img, ang_img, width_img = post_process_output(lossd['pred']['pos'], lossd['pred']['cos'],
 														lossd['pred']['sin'], lossd['pred']['width'])
 
-			#test classification
-			_, class_pred = torch.max(lossd['pred']['class'], 1)
-			if class_pred.item() == y[-1].item():
-				classresults['correct'] += 1
-			else:
-				classresults['failed'] += 1
+			if args.classify:
+				#test classification
+				_, class_pred = torch.max(lossd['pred']['class'], 1)
+				if class_pred.item() == y[-1].item() - 1:
+					classresults['correct'] += 1
+				else:
+					classresults['failed'] += 1
 
 			if args.iou_eval:
 				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx),
@@ -149,6 +150,11 @@ if __name__ == '__main__':
 				evaluation.plot_output(test_data.dataset.get_rgb(didx, normalise=False),
 									   test_data.dataset.get_depth(didx), q_img,
 									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img)
+
+	if args.classify:
+		logging.info('Class Results: %d/%d = %f' % (classresults['correct'],
+							  classresults['correct'] + classresults['failed'],
+							  classresults['correct'] / (classresults['correct'] + graspresults['failed'])))
 
 	if args.iou_eval:
 		logging.info('IOU Results: %d/%d = %f' % (graspresults['correct'],

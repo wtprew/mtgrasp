@@ -73,18 +73,15 @@ class MTGCNN(nn.Module):
 		y_pos, y_cos, y_sin, y_width, y_class = yc
 		pos_pred, cos_pred, sin_pred, width_pred, class_pred = self(xc)
 
-		print('output', y_class.shape, 'predicted', class_pred.shape)
-		import ipdb; ipdb.set_trace()
-
 		p_loss = F.mse_loss(pos_pred, y_pos)
 		cos_loss = F.mse_loss(cos_pred, y_cos)
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		class_loss = F.cross_entropy(class_pred, y_class)
+		class_loss = F.cross_entropy(class_pred, y_class.squeeze(0) - 1)
 
 		return {
-			'loss': p_loss + cos_loss + sin_loss + width_loss,
+			'loss': (0.5*(p_loss + cos_loss + sin_loss + width_loss)) + 0.5*((class_loss)),
 			'losses': {
 				'p_loss': p_loss,
 				'cos_loss': cos_loss,
