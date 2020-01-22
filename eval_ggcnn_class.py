@@ -45,13 +45,6 @@ def parse_args():
 
 	return args
 
-def objects(class_file):
-	objects = []
-	with open(class_file, 'r') as f:
-		for l in f:
-			objects.append(l.strip('\n'))
-		f.close()
-	return objects
 
 if __name__ == '__main__':
 	args = parse_args()
@@ -67,9 +60,9 @@ if __name__ == '__main__':
 	Dataset = get_dataset(args.dataset)
 
 	if args.dataset == 'cornell_coco':
-		classes = objects(args.annotation_path)
 		test_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
 							include_rgb=args.use_rgb, include_depth=args.use_depth)
+		classes = test_dataset.nms
 
 	elif args.dataset == 'cornell' or 'jacquard':
 		test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
@@ -105,7 +98,7 @@ if __name__ == '__main__':
 			if args.classify:
 				#test classification
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
-				if class_pred.item() == y[-1].item() - 1:
+				if class_pred.item() == y[-1].item():
 					classresults['correct'] += 1
 				else:
 					classresults['failed'] += 1

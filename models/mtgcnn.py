@@ -21,7 +21,7 @@ class MTGCNN(nn.Module):
 	"""
 	extension of the GG-CNN with a classification branch
 	"""
-	def __init__(self, input_channels=1, num_classes=70):
+	def __init__(self, input_channels=1, num_classes=num_classes):
 		super().__init__()
 		self.conv1 = nn.Conv2d(input_channels, filter_sizes[0], kernel_sizes[0], stride=strides[0], padding=3)
 		self.conv2 = nn.Conv2d(filter_sizes[0], filter_sizes[1], kernel_sizes[1], stride=strides[1], padding=2)
@@ -30,16 +30,14 @@ class MTGCNN(nn.Module):
 		self.convt2 = nn.ConvTranspose2d(filter_sizes[3], filter_sizes[4], kernel_sizes[4], stride=strides[4], padding=2, output_padding=1)
 		self.convt3 = nn.ConvTranspose2d(filter_sizes[4], filter_sizes[5], kernel_sizes[5], stride=strides[5], padding=3, output_padding=1)
 
-		self.linear1 = nn.Linear(32*301*301, 500)
-		self.linear2 = nn.Linear(500, 256)
+		self.linear1 = nn.Linear(32*301*301, 512)
+		self.linear2 = nn.Linear(512, 256)
 		self.class_output = nn.Linear(256, num_classes)
 
 		self.pos_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.cos_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.sin_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.width_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
-
-		# self.softmax = nn.Softmax(dim=1)
 
 		for m in self.modules():
 			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
@@ -65,8 +63,6 @@ class MTGCNN(nn.Module):
 		sin_output = self.sin_output(x)
 		width_output = self.width_output(x)
 
-		# class_out = self.softmax(y)
-
 		return pos_output, cos_output, sin_output, width_output, class_out
 
 	def compute_loss(self, xc, yc):
@@ -78,10 +74,14 @@ class MTGCNN(nn.Module):
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		class_loss = F.cross_entropy(class_pred, y_class.squeeze(0) - 1)
+		class_loss = F.cross_entropy(class_pred, y_class.squeeze(0))
 
 		return {
-			'loss': (0.5*(p_loss + cos_loss + sin_loss + width_loss)) + 0.5*((class_loss)),
+			'loss': {
+				'grasp': p_loss + cos_loss + sin_loss + width_loss,
+				'combined': (0.5*(p_loss + cos_loss + sin_loss + width_loss)) + (0.5*(class_loss)),
+				'class': class_loss
+			},
 			'losses': {
 				'p_loss': p_loss,
 				'cos_loss': cos_loss,
@@ -97,6 +97,3 @@ class MTGCNN(nn.Module):
 				'class': class_pred
 			}
 		}
-
-	def classifier(self, x, target):
-		pass
