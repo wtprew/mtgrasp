@@ -36,7 +36,7 @@ def parse_args():
 	parser.add_argument('--dataset-path', type=str, help='Path to dataset')
 	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
 	parser.add_argument('--annotation-path', type=str, help='Directory to object classes', default='annotations/objects.txt')
-	parser.add_argument('--loss', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
+	parser.add_argument('--loss_type', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for training (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
@@ -58,7 +58,7 @@ def parse_args():
 	return args
 
 
-def validate(net, loss, device, val_data, batches_per_epoch, classify=True):
+def validate(net, loss_type, device, val_data, batches_per_epoch, classify=True):
 	"""
 	Run validation.
 	:param net: Network
@@ -94,7 +94,7 @@ def validate(net, loss, device, val_data, batches_per_epoch, classify=True):
 				yc = [yy.to(device) for yy in y]
 				lossd = net.compute_loss(xc, yc)
 
-				loss = lossd['loss'][loss]
+				loss = lossd['loss'][loss_type]
 
 				results['loss'] += loss.item()/ld
 				for ln, l in lossd['losses'].items():
@@ -127,7 +127,7 @@ def validate(net, loss, device, val_data, batches_per_epoch, classify=True):
 	return results
 
 
-def train(epoch, loss, net, device, train_data, optimizer, batches_per_epoch, vis=False):
+def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, vis=False):
 	"""
 	Run one training epoch
 	:param epoch: Current epoch
@@ -159,7 +159,7 @@ def train(epoch, loss, net, device, train_data, optimizer, batches_per_epoch, vi
 			yc = [yy.to(device) for yy in y]
 			lossd = net.compute_loss(xc, yc)
 
-			loss = lossd['loss'][loss]
+			loss = lossd['loss'][loss_type]
 
 			if batch_idx % 100 == 0:
 				logging.info('Epoch: {}, Batch: {}, Loss: {:0.4f}'.format(epoch, batch_idx, loss.item()))
@@ -195,7 +195,7 @@ def train(epoch, loss, net, device, train_data, optimizer, batches_per_epoch, vi
 
 def run():
 	args = parse_args()
-	import ipdb; ipdb.set_trace()
+
 	# Set-up output directories
 	dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
 	net_desc = '{}_{}'.format(dt, '_'.join(args.description.split()))
@@ -212,10 +212,14 @@ def run():
 	classes = None
 
 	if args.dataset == 'cornell_coco':
+		print('Training dataset loading')
 		train_dataset = Dataset(args.dataset_path, json=args.json, start=0.0, end=args.split,
 							random_rotate=True, random_zoom=True,
 							include_depth=args.use_depth, include_rgb=args.use_rgb)
 		classes = train_dataset.nms
+		supercategories = train_dataset.supcats
+		print('target classes', classes, 'target_superclasses', supercategories)
+		print('Validation set loading')
 		val_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
 						  random_rotate=True, random_zoom=True,
 						  include_depth=args.use_depth, include_rgb=args.use_rgb)
@@ -245,9 +249,9 @@ def run():
 	# Load the network
 	logging.info('Loading Network...')
 	input_channels = 1*args.use_depth + 3*args.use_rgb
-	ggcnn = get_network(args.network)
+	mtgcnn = get_network(args.network)
 
-	net = ggcnn(input_channels=input_channels)
+	net = mtgcnn(input_channels=input_channels)
 	device = torch.device("cuda:0")
 	net = net.to(device)
 	optimizer = optim.Adam(net.parameters())
@@ -262,10 +266,10 @@ def run():
 	f.close()
 
 	best_iou = 0.0
-	best_classify = 0.0
+	best_classification = 0.0
 	for epoch in range(args.epochs):
 		logging.info('Beginning Epoch {:02d}'.format(epoch))
-		train_results = train(epoch, args.loss, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
+		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
 
 		# Log training losses to tensorboard
 		tb.add_scalar('loss/train_loss', train_results['loss'], epoch)
@@ -274,21 +278,27 @@ def run():
 
 		# Run Validation
 		logging.info('Validating...')
-		test_results = validate(net, args.loss, device, val_data, args.val_batches)
-		logging.info('%d/%d = %f' % (test_results['correct'], test_results['correct'] + test_results['failed'],
+		test_results = validate(net, args.loss_type, device, val_data, args.val_batches)
+		logging.info('IoU results %d/%d = %f' % (test_results['correct'], test_results['correct'] + test_results['failed'],
 									 test_results['correct']/(test_results['correct']+test_results['failed'])))
+		if args.classify:
+			logging.info('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
+									 test_results['classcorrect']/(test_results['classcorrect']+test_results['classfailed'])))
 
 		# Log validation results to tensorbaord
 		tb.add_scalar('loss/IOU', test_results['correct'] / (test_results['correct'] + test_results['failed']), epoch)
+		tb.add_scalar('loss/class', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
 		tb.add_scalar('loss/val_loss', test_results['loss'], epoch)
 		for n, l in test_results['losses'].items():
 			tb.add_scalar('val_loss/' + n, l, epoch)
 
 		# Save best performing network
 		iou = test_results['correct'] / (test_results['correct'] + test_results['failed'])
-		if iou > best_iou or epoch == 0 or (epoch % 10) == 0:
-			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f' % (epoch, iou)))
+		classification = test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed'])
+		if iou > best_iou or classification > best_classification or epoch == 0 or (epoch % 10) == 0:
+			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_class%0.2f' % (epoch, iou, classification)))
 			best_iou = iou
+			best_classification = classification
 
 
 if __name__ == '__main__':

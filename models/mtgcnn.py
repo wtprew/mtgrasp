@@ -30,14 +30,15 @@ class MTGCNN(nn.Module):
 		self.convt2 = nn.ConvTranspose2d(filter_sizes[3], filter_sizes[4], kernel_sizes[4], stride=strides[4], padding=2, output_padding=1)
 		self.convt3 = nn.ConvTranspose2d(filter_sizes[4], filter_sizes[5], kernel_sizes[5], stride=strides[5], padding=3, output_padding=1)
 
-		self.linear1 = nn.Linear(32*301*301, 512)
-		self.linear2 = nn.Linear(512, 256)
-		self.class_output = nn.Linear(256, num_classes)
-
 		self.pos_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.cos_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.sin_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.width_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
+
+		self.class_out = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
+		self.linear1 = nn.Linear(300*300, 512)
+		self.linear2 = nn.Linear(512, 256)
+		self.class_output = nn.Linear(256, num_classes)
 
 		for m in self.modules():
 			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
@@ -52,16 +53,18 @@ class MTGCNN(nn.Module):
 		x = F.relu(self.convt2(x))
 		x = F.relu(self.convt3(x))
 
-		#linear layers for classification
-		y = torch.flatten(x, 1)
-		y = F.relu(self.linear1(y))
-		y = F.relu(self.linear2(y))
-		class_out = self.class_output(y)
-
 		pos_output = self.pos_output(x)
 		cos_output = self.cos_output(x)
 		sin_output = self.sin_output(x)
 		width_output = self.width_output(x)
+
+		#linear layers for classification
+
+		y = self.class_out(x)
+		y = torch.flatten(y, 1)
+		y = F.relu(self.linear1(y))
+		y = F.relu(self.linear2(y))
+		class_out = self.class_output(y)
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
@@ -74,7 +77,7 @@ class MTGCNN(nn.Module):
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		class_loss = F.cross_entropy(class_pred, y_class.squeeze(0))
+		class_loss = F.cross_entropy(class_pred, y_class.squeeze(1))
 
 		return {
 			'loss': {

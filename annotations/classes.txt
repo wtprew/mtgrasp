@@ -10,4 +10,3 @@ clothes
 eyewear
 shoe
 nail polish
-
