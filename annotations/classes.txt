@@ -8,5 +8,6 @@ jar
 bag
 clothes
 eyewear
-shoe
+footwear
 nail polish
+brush

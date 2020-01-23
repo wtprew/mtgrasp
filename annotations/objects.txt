@@ -5,10 +5,12 @@ shoe
 torch
 mouse
 tape
+ribbon
 pen
 box
 hairbrush
 toothbrush
+toilet brush
 toothpaste
 goggles
 clip
@@ -59,7 +61,8 @@ mango
 kiwi
 courgette
 plum
-hat
+straw hat
+baseball hat
 lock
 lollipop
 string
@@ -67,4 +70,7 @@ asparagus
 mouthguard
 soap
 flip flop
-brush
+tennis balls
+candle
+thread
+nail polish
