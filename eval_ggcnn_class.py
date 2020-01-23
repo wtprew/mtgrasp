@@ -60,6 +60,7 @@ if __name__ == '__main__':
 	Dataset = get_dataset(args.dataset)
 
 	if args.dataset == 'cornell_coco':
+		from sklearn.metrics import confusion_matrix
 		test_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
 							include_rgb=args.use_rgb, include_depth=args.use_depth)
 		classes = test_dataset.nms
@@ -98,10 +99,14 @@ if __name__ == '__main__':
 			if args.classify:
 				#test classification
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
-				if class_pred.item() == y[-1].item():
+				predicted = class_pred.item()
+				label = y[-1].item()
+				print(predicted, label)
+				if predicted == label:
 					classresults['correct'] += 1
 				else:
 					classresults['failed'] += 1
+				cm = confusion_matrix(predicted, label, classes)
 
 			if args.iou_eval:
 				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx),
@@ -112,25 +117,6 @@ if __name__ == '__main__':
 					graspresults['correct'] += 1
 				else:
 					graspresults['failed'] += 1
-			
-			# test classification for each category
-			# class_correct = list(0. for i in range(10))
-			# class_total = list(0. for i in range(10))
-			# with torch.no_grad():
-			#     for data in testloader:
-			#         images, labels = data
-			#         outputs = net(images)
-			#         _, predicted = torch.max(outputs, 1)
-			#         c = (predicted == labels).squeeze()
-			#         for i in range(4):
-			#             label = labels[i]
-			#             class_correct[label] += c[i].item()
-			#             class_total[label] += 1
-
-
-			# for i in range(10):
-			#     print('Accuracy of %5s : %2d %%' % (
-			#         classes[i], 100 * class_correct[i] / class_total[i]))
 
 			if args.jacquard_output:
 				grasps = grasp.detect_grasps(q_img, ang_img, width_img=width_img, no_grasps=1)
