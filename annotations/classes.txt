@@ -1,13 +1,16 @@
 tool
 utensil
 stationary
-fruit
+plant
 box
 bottle
 jar
 bag
-clothes
+headwear
 eyewear
 footwear
-nail polish
 brush
+sweet
+drink
+toy
+tech

@@ -1,10 +1,11 @@
 wood
-plastic
+soft plastic
+hard plastic
 glass
 metal
 cardboard
-paper
-nylon
 ceramic
 sponge
 chocolate
+fabric
+organic

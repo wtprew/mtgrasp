@@ -1,11 +1,12 @@
 import argparse
 import logging
 
+import matplotlib.pyplot as plt
 import torch.utils.data
 
 from models.common import post_process_output
-from utils.dataset_processing import evaluation, grasp
 from utils.data import get_dataset
+from utils.dataset_processing import evaluation, grasp
 
 logging.basicConfig(level=logging.INFO)
 
@@ -78,6 +79,8 @@ if __name__ == '__main__':
 
 	graspresults = {'correct': 0, 'failed': 0}
 	classresults = {'correct': 0, 'failed': 0}
+	predicted = []
+	gt = []
 
 	if args.jacquard_output:
 		jo_fn = args.network + '_jacquard_output.txt'
@@ -85,7 +88,7 @@ if __name__ == '__main__':
 			pass
 
 	with torch.no_grad():
-		for idx, (x, y, didx) in enumerate(test_data):
+		for idx, (x, y, didx, rot, zoom) in enumerate(test_data):
 
 			logging.info('Processing {}/{}'.format(idx+1, len(test_data)))
 			xc = x.to(device)
@@ -96,15 +99,21 @@ if __name__ == '__main__':
 														lossd['pred']['sin'], lossd['pred']['width'])
 
 			if args.classify:
+				from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 				#test classification
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
-				if class_pred.item() == y[-1].item():
+				pred = class_pred.item()
+				label = y[-1].item()
+				if pred == label:
 					classresults['correct'] += 1
 				else:
 					classresults['failed'] += 1
+				predicted.append(pred)
+				gt.append(label)
+				# import ipdb; ipdb.set_trace()
 
 			if args.iou_eval:
-				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx),
+				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx, rot, zoom),
 												   no_grasps=args.n_grasps,
 												   grasp_width=width_img,
 												   )
@@ -112,25 +121,7 @@ if __name__ == '__main__':
 					graspresults['correct'] += 1
 				else:
 					graspresults['failed'] += 1
-			
-			# test classification for each category
-			# class_correct = list(0. for i in range(10))
-			# class_total = list(0. for i in range(10))
-			# with torch.no_grad():
-			#     for data in testloader:
-			#         images, labels = data
-			#         outputs = net(images)
-			#         _, predicted = torch.max(outputs, 1)
-			#         c = (predicted == labels).squeeze()
-			#         for i in range(4):
-			#             label = labels[i]
-			#             class_correct[label] += c[i].item()
-			#             class_total[label] += 1
 
-
-			# for i in range(10):
-			#     print('Accuracy of %5s : %2d %%' % (
-			#         classes[i], 100 * class_correct[i] / class_total[i]))
 
 			if args.jacquard_output:
 				grasps = grasp.detect_grasps(q_img, ang_img, width_img=width_img, no_grasps=1)
@@ -140,14 +131,33 @@ if __name__ == '__main__':
 						f.write(g.to_jacquard(scale=1024 / 300) + '\n')
 
 			if args.vis:
-				evaluation.plot_output(test_data.dataset.get_rgb(didx, normalise=False),
-									   test_data.dataset.get_depth(didx), q_img,
+				evaluation.plot_output(test_data.dataset.get_rgb(didx, rot, zoom, normalise=False),
+									   test_data.dataset.get_depth(didx,rot, zoom), q_img,
 									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img)
 
 	if args.classify:
 		logging.info('Class Results: %d/%d = %f' % (classresults['correct'],
 							  classresults['correct'] + classresults['failed'],
 							  classresults['correct'] / (classresults['correct'] + graspresults['failed'])))
+		# import ipdb; ipdb.set_trace()
+		cm = confusion_matrix(gt, predicted, labels=list(range(0,70)))
+		# if args.vis:
+		fig = plt.figure()
+		ax = fig.add_subplot(111)
+		cax = ax.matshow(cm)
+		plt.title('Confusion matrix')
+		fig.colorbar(cax)
+		# import numpy as np
+		# values, counts = np.unique(gt, return_counts=True)
+		# values1, counts1 = np.unique(predicted, return_counts=True)
+		# print(values, counts)
+		# print(values1, counts1)
+		# ax.set_xticklabels([''] + classes)
+		# ax.set_yticklabels([''] + classes)
+		plt.xlabel('Predicted')
+		plt.ylabel('True')
+		plt.show()
+
 
 	if args.iou_eval:
 		logging.info('IOU Results: %d/%d = %f' % (graspresults['correct'],
