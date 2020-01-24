@@ -61,6 +61,7 @@ if __name__ == '__main__':
 	Dataset = get_dataset(args.dataset)
 
 	if args.dataset == 'cornell_coco':
+		from sklearn.metrics import confusion_matrix
 		test_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
 							include_rgb=args.use_rgb, include_depth=args.use_depth)
 		classes = test_dataset.nms
@@ -121,7 +122,6 @@ if __name__ == '__main__':
 					graspresults['correct'] += 1
 				else:
 					graspresults['failed'] += 1
-
 
 			if args.jacquard_output:
 				grasps = grasp.detect_grasps(q_img, ang_img, width_img=width_img, no_grasps=1)
