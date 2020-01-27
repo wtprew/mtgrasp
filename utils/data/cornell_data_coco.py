@@ -7,6 +7,7 @@ import torch
 import torch.utils.data as data
 from PIL import Image
 from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 
 from utils.dataset_processing import grasp, image
 
@@ -16,8 +17,8 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 	"""
 	Dataset wrapper for the Cornell dataset and coco annotations.
 	"""
-	def __init__(self, file_path, json, start=0.0, end=1.0, output_size=300, 
-				include_rgb=True, include_depth=False, **kwargs):
+	def __init__(self, file_path, json, split=0.9, output_size=300, 
+				include_rgb=True, include_depth=False, train=True, shuffle=True, seed=42, **kwargs):
 		"""
 		:param file_path: Cornell Dataset directory.
 		:param json: path to coco annotation file
@@ -31,7 +32,13 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		self.ids = self.coco.getImgIds()
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))
-		self.ids = self.ids[int(len(self.ids)*start):int(len(self.ids)*end)]
+		
+		trainids, testids = train_test_split(self.ids, train_size=split, shuffle=True, random_seed=seed)
+
+		if train == True:
+			self.ids = trainids
+		else:
+			self.ids = testids
 
 		self.cats = self.coco.loadCats(self.coco.getCatIds())
 		self.nms = [cat['name'] for cat in self.cats]

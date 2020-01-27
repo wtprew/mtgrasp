@@ -68,7 +68,14 @@ class MTGCNN(nn.Module):
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
-	def compute_loss(self, xc, yc):
+	def compute_loss(self, xc, yc, grasp_weight=0.5, class_weight=0.5):
+		"""
+		xc: prediction from network
+		yc: ground truth in same order as xc
+		grasp_weight: weighting for loss function to be assigned to grasp
+		class_weight: weighting for loss function to be assigned to class
+		"""
+		
 		y_pos, y_cos, y_sin, y_width, y_class = yc
 		pos_pred, cos_pred, sin_pred, width_pred, class_pred = self(xc)
 
@@ -82,7 +89,7 @@ class MTGCNN(nn.Module):
 		return {
 			'loss': {
 				'grasp': p_loss + cos_loss + sin_loss + width_loss,
-				'combined': (0.5*(p_loss + cos_loss + sin_loss + width_loss)) + (0.5*(class_loss)),
+				'combined': (grasp_weight*(p_loss + cos_loss + sin_loss + width_loss)) + (class_weight*(class_loss)),
 				'class': class_loss
 			},
 			'losses': {

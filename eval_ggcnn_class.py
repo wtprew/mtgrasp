@@ -25,6 +25,8 @@ def parse_args():
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for evaluation (0/1)')
 	parser.add_argument('--augment', action='store_true', help='Whether data augmentation should be applied')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
+	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
+	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--ds-rotate', type=float, default=0.0,
 						help='Shift the start point of the dataset to use a different test/train split')
 	parser.add_argument('--num-workers', type=int, default=8, help='Dataset workers')
@@ -68,8 +70,8 @@ if __name__ == '__main__':
 
 	elif args.dataset == 'cornell' or 'jacquard':
 		test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
-							random_rotate=args.augment, random_zoom=args.augment,
-							include_depth=args.use_depth, include_rgb=args.use_rgb)
+							random_rotate=args.augment, random_zoom=args.augment, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, , train=False, shuffle=args.shuffle, seed=args.random_seed)
 	test_data = torch.utils.data.DataLoader(
 		test_dataset,
 		batch_size=1,
