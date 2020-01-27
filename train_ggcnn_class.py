@@ -1,25 +1,22 @@
+import argparse
 import datetime
+import logging
 import os
 import sys
-import argparse
-import logging
 
 import cv2
-
 import torch
-import torch.utils.data
 import torch.optim as optim
-
+import torch.utils.data
+from tensorboard.plugins import projector
+from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
 
-import tensorboardX
-
-from utils.visualisation.gridshow import gridshow
-
-from utils.dataset_processing import evaluation
-from utils.data import get_dataset
 from models import get_network
 from models.common import post_process_output
+from utils.data import get_dataset
+from utils.dataset_processing import evaluation
+from utils.visualisation.gridshow import gridshow
 
 logging.basicConfig(level=logging.INFO)
 
@@ -176,6 +173,8 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 			loss.backward()
 			optimizer.step()
 
+			# writer.add_images('image_batch_test', x)
+
 			# Display the images
 			if vis:
 				imgs = []
@@ -205,7 +204,7 @@ def run():
 	save_folder = os.path.join(args.outdir, net_desc)
 	if not os.path.exists(save_folder):
 		os.makedirs(save_folder)
-	tb = tensorboardX.SummaryWriter(os.path.join(args.logdir, net_desc))
+	writer = SummaryWriter(os.path.join(args.logdir, net_desc))
 
 	# Load Dataset
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
@@ -222,7 +221,7 @@ def run():
 		supercategories = train_dataset.supcats
 		print('target classes', classes, 'target_superclasses', supercategories)
 		print('Validation set loading')
-		val_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
+		val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
 	else:
@@ -253,7 +252,7 @@ def run():
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	mtgcnn = get_network(args.network)
 
-	net = mtgcnn(input_channels=input_channels)
+	net = mtgcnn(input_channels=input_channels, num_classes=len(train_dataset.cats))
 	device = torch.device("cuda:0")
 	net = net.to(device)
 	optimizer = optim.Adam(net.parameters())
@@ -261,6 +260,7 @@ def run():
 
 	# Print model architecture.
 	summary(net, (input_channels, 300, 300))
+	writer.add_graph(net, (input_channels, 300, 300))
 	f = open(os.path.join(save_folder, 'arch.txt'), 'w')
 	sys.stdout = f
 	summary(net, (input_channels, 300, 300))
@@ -274,9 +274,9 @@ def run():
 		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
 
 		# Log training losses to tensorboard
-		tb.add_scalar('loss/train_loss', train_results['loss'], epoch)
+		writer.add_scalar('loss/train_loss', train_results['loss'], epoch)
 		for n, l in train_results['losses'].items():
-			tb.add_scalar('train_loss/' + n, l, epoch)
+			writer.add_scalar('train_loss/' + n, l, epoch)
 
 		# Run Validation
 		logging.info('Validating...')
@@ -288,11 +288,11 @@ def run():
 									 test_results['classcorrect']/(test_results['classcorrect']+test_results['classfailed'])))
 
 		# Log validation results to tensorbaord
-		tb.add_scalar('loss/IOU', test_results['correct'] / (test_results['correct'] + test_results['failed']), epoch)
-		tb.add_scalar('loss/class', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
-		tb.add_scalar('loss/val_loss', test_results['loss'], epoch)
+		writer.add_scalar('loss/IOU', test_results['correct'] / (test_results['correct'] + test_results['failed']), epoch)
+		writer.add_scalar('loss/class', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
+		writer.add_scalar('loss/val_loss', test_results['loss'], epoch)
 		for n, l in test_results['losses'].items():
-			tb.add_scalar('val_loss/' + n, l, epoch)
+			writer.add_scalar('val_loss/' + n, l, epoch)
 
 		# Save best performing network
 		iou = test_results['correct'] / (test_results['correct'] + test_results['failed'])

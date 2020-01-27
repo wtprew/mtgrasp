@@ -17,15 +17,14 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 	"""
 	Dataset wrapper for the Cornell dataset and coco annotations.
 	"""
-	def __init__(self, file_path, json, split=0.9, output_size=300, 
-				include_rgb=True, include_depth=False, train=True, shuffle=True, seed=42, **kwargs):
+	def __init__(self, file_path, json, split=0.9, output_size=300, include_rgb=True, 
+				include_depth=False, train=True, shuffle=True, seed=42, **kwargs):
 		"""
 		:param file_path: Cornell Dataset directory.
 		:param json: path to coco annotation file
 		:param start: If splitting the dataset, split by this fraction [0, 1]
 		:param kwargs: kwargs for GraspDatasetBase
 		"""
-		super(CornellCocoDataset, self).__init__(**kwargs)
 
 		self.file_path = file_path
 		self.coco = COCO(json)
@@ -33,7 +32,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))
 		
-		trainids, testids = train_test_split(self.ids, train_size=split, shuffle=True, random_seed=seed)
+		trainids, testids = train_test_split(self.ids, train_size=split, shuffle=True, random_state=seed)
 
 		if train == True:
 			self.ids = trainids

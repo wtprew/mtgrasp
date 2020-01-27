@@ -6,22 +6,11 @@ filter_sizes = [32, 16, 8, 8, 16, 32]
 kernel_sizes = [9, 5, 3, 3, 5, 9]
 strides = [3, 2, 2, 2, 2, 3]
 
-class_file = 'annotations/objects.txt'
-
-def objects(fname):
-	count = 0 
-	with open(fname, 'r') as f:
-		for line in f:
-			count +=1
-	return count
-
-num_classes = objects(class_file)
-
 class MTGCNN(nn.Module):
 	"""
 	extension of the GG-CNN with a classification branch
 	"""
-	def __init__(self, input_channels=1, num_classes=num_classes):
+	def __init__(self, input_channels=1, num_classes=70):
 		super().__init__()
 		self.conv1 = nn.Conv2d(input_channels, filter_sizes[0], kernel_sizes[0], stride=strides[0], padding=3)
 		self.conv2 = nn.Conv2d(filter_sizes[0], filter_sizes[1], kernel_sizes[1], stride=strides[1], padding=2)
@@ -62,9 +51,12 @@ class MTGCNN(nn.Module):
 
 		y = self.class_out(x)
 		y = torch.flatten(y, 1)
+		print(y.shape)
+		import ipdb; ipdb.set_trace()
 		y = F.relu(self.linear1(y))
 		y = F.relu(self.linear2(y))
 		class_out = self.class_output(y)
+		class_out = F.softmax(class_out)
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
@@ -84,7 +76,7 @@ class MTGCNN(nn.Module):
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		class_loss = F.cross_entropy(class_pred, y_class.squeeze(1))
+		class_loss = F.nll_loss(class_pred, y_class.squeeze(1))
 
 		return {
 			'loss': {
