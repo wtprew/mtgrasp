@@ -24,7 +24,7 @@ class MTGCNN(nn.Module):
 		self.sin_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.width_output = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 
-		self.class_out = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
+		self.class_conv = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
 		self.linear1 = nn.Linear(300*300, 512)
 		self.linear2 = nn.Linear(512, 256)
 		self.class_output = nn.Linear(256, num_classes)
@@ -49,14 +49,13 @@ class MTGCNN(nn.Module):
 
 		#linear layers for classification
 
-		y = self.class_out(x)
+		y = self.class_conv(x)
 		y = torch.flatten(y, 1)
-		print(y.shape)
-		import ipdb; ipdb.set_trace()
 		y = F.relu(self.linear1(y))
 		y = F.relu(self.linear2(y))
 		class_out = self.class_output(y)
-		class_out = F.softmax(class_out)
+		# class_out = F.softmax(y)
+		# import ipdb; ipdb.set_trace()
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
@@ -76,7 +75,7 @@ class MTGCNN(nn.Module):
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		class_loss = F.nll_loss(class_pred, y_class.squeeze(1))
+		class_loss = F.cross_entropy(class_pred, y_class.squeeze(1))
 
 		return {
 			'loss': {
