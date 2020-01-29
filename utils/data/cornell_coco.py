@@ -46,7 +46,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 
 		rgbf = []
 		for imgFile in self.coco.loadImgs(self.ids):
-			rgbf.append(os.path.join(file_path, imgFile['file_name']))
+			rgbf.append(glob.glob(os.path.join(file_path, imgFile['file_name'])))
 
 		depthf = [f.replace('r.png', 'd.tiff') for f in rgbf]
 		graspf = [f.replace('d.tiff', 'cpos.txt') for f in depthf]
