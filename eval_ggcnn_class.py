@@ -35,7 +35,6 @@ def parse_args():
 	parser.add_argument('--iou-eval', action='store_true', help='Compute success based on IoU metric.')
 	parser.add_argument('--jacquard-output', action='store_true', help='Jacquard-dataset style output')
 	parser.add_argument('--vis', action='store_true', help='Visualise the network output')
-	parser.add_argument('--classify', action='store_true', help='Classify outputs')
 
 	args = parser.parse_args()
 
@@ -64,14 +63,15 @@ if __name__ == '__main__':
 
 	if args.dataset == 'cornell_coco':
 		from sklearn.metrics import confusion_matrix
-		test_dataset = Dataset(args.dataset_path, json=args.json, start=args.split, end=1.0,
-							include_rgb=args.use_rgb, include_depth=args.use_depth)
+		test_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
 		classes = test_dataset.nms
 
 	elif args.dataset == 'cornell' or 'jacquard':
 		test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
 							random_rotate=args.augment, random_zoom=args.augment, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, , train=False, shuffle=args.shuffle, seed=args.random_seed)
+							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
 	test_data = torch.utils.data.DataLoader(
 		test_dataset,
 		batch_size=1,
@@ -101,19 +101,17 @@ if __name__ == '__main__':
 			q_img, ang_img, width_img = post_process_output(lossd['pred']['pos'], lossd['pred']['cos'],
 														lossd['pred']['sin'], lossd['pred']['width'])
 
-			if args.classify:
-				from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
-				#test classification
-				_, class_pred = torch.max(lossd['pred']['class'], 1)
-				pred = class_pred.item()
-				label = y[-1].item()
-				if pred == label:
-					classresults['correct'] += 1
-				else:
-					classresults['failed'] += 1
-				predicted.append(pred)
-				gt.append(label)
-				# import ipdb; ipdb.set_trace()
+			from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+			#test classification
+			_, class_pred = torch.max(lossd['pred']['class'], 1)
+			pred = class_pred.item()
+			label = y[-1].item()
+			if pred == label:
+				classresults['correct'] += 1
+			else:
+				classresults['failed'] += 1
+			predicted.append(pred)
+			gt.append(label)
 
 			if args.iou_eval:
 				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx, rot, zoom),
@@ -137,28 +135,27 @@ if __name__ == '__main__':
 									   test_data.dataset.get_depth(didx,rot, zoom), q_img,
 									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img)
 
-	if args.classify:
-		logging.info('Class Results: %d/%d = %f' % (classresults['correct'],
-							  classresults['correct'] + classresults['failed'],
-							  classresults['correct'] / (classresults['correct'] + graspresults['failed'])))
-		# import ipdb; ipdb.set_trace()
-		cm = confusion_matrix(gt, predicted, labels=list(range(0,70)))
-		# if args.vis:
-		fig = plt.figure()
-		ax = fig.add_subplot(111)
-		cax = ax.matshow(cm)
-		plt.title('Confusion matrix')
-		fig.colorbar(cax)
-		# import numpy as np
-		# values, counts = np.unique(gt, return_counts=True)
-		# values1, counts1 = np.unique(predicted, return_counts=True)
-		# print(values, counts)
-		# print(values1, counts1)
-		# ax.set_xticklabels([''] + classes)
-		# ax.set_yticklabels([''] + classes)
-		plt.xlabel('Predicted')
-		plt.ylabel('True')
-		plt.show()
+	logging.info('Class Results: %d/%d = %f' % (classresults['correct'],
+							classresults['correct'] + classresults['failed'],
+							classresults['correct'] / (classresults['correct'] + graspresults['failed'])))
+	# import ipdb; ipdb.set_trace()
+	cm = confusion_matrix(gt, predicted, labels=list(range(0,70)))
+	# if args.vis:
+	fig = plt.figure()
+	ax = fig.add_subplot(111)
+	cax = ax.matshow(cm)
+	plt.title('Confusion matrix')
+	fig.colorbar(cax)
+	# import numpy as np
+	# values, counts = np.unique(gt, return_counts=True)
+	# values1, counts1 = np.unique(predicted, return_counts=True)
+	# print(values, counts)
+	# print(values1, counts1)
+	# ax.set_xticklabels([''] + classes)
+	# ax.set_yticklabels([''] + classes)
+	plt.xlabel('Predicted')
+	plt.ylabel('True')
+	plt.show()
 
 
 	if args.iou_eval:

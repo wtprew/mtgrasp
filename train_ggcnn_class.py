@@ -20,7 +20,7 @@ from utils.visualisation.gridshow import gridshow
 
 logging.basicConfig(level=logging.INFO)
 
-cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
+# cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
 
 def parse_args():
 	parser = argparse.ArgumentParser(description='Train MTGCNN')
@@ -34,6 +34,8 @@ def parse_args():
 	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
 	parser.add_argument('--annotation-path', type=str, help='Directory to object classes', default='annotations/objects.txt')
 	parser.add_argument('--loss_type', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
+	parser.add_argument('--grasp_weight', type=float, default=1.0, help='Loss weight to modify the grasp weight')
+	parser.add_argument('--class_weight', type=float, default=1.0, help='Loss weight to modify the class weight')
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for training (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
@@ -51,13 +53,12 @@ def parse_args():
 	parser.add_argument('--outdir', type=str, default='output/models/', help='Training Output Directory')
 	parser.add_argument('--logdir', type=str, default='tensorboard/', help='Log directory')
 	parser.add_argument('--vis', action='store_true', help='Visualise the training process')
-	parser.add_argument('--classify', action='store_true', help='Classify outputs')
 
 	args = parser.parse_args()
 	return args
 
 
-def validate(net, loss_type, device, val_data, batches_per_epoch, classify=True):
+def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0):
 	"""
 	Run validation.
 	:param net: Network
@@ -69,13 +70,13 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, classify=True)
 	net.eval()
 
 	results = {
-		'correct': 0,
-		'failed': 0,
+		'graspcorrect': 0,
+		'graspfailed': 0,
 		'classcorrect': 0,
 		'classfailed': 0,
-		'loss': 0,
+		'grasploss': 0,
+		'classloss': 0,
 		'losses': {
-
 		}
 	}
 
@@ -91,11 +92,13 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, classify=True)
 
 				xc = x.to(device)
 				yc = [yy.to(device) for yy in y]
-				lossd = net.compute_loss(xc, yc)
+				lossd = net.compute_loss(xc, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
-				loss = lossd['loss'][loss_type]
+				grasploss = lossd['loss']['grasp']
+				classloss = lossd['loss']['class']
 
-				results['loss'] += loss.item()/ld
+				results['grasploss'] += grasploss.item()/ld
+				results['classloss'] += classloss.item()/ld
 				for ln, l in lossd['losses'].items():
 					if ln not in results['losses']:
 						results['losses'][ln] = 0
@@ -111,22 +114,23 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, classify=True)
 												   )
 
 				if s:
-					results['correct'] += 1
+					results['graspcorrect'] += 1
 				else:
-					results['failed'] += 1
+					results['graspfailed'] += 1
 				
-				if classify:
-					#test classification
-					_, class_pred = torch.max(lossd['pred']['class'], 1)
-					if class_pred.item() == y[-1].item():
-						results['classcorrect'] += 1
-					else:
-						results['classfailed'] += 1
+				#test classification
+				_, class_pred = torch.max(lossd['pred']['class'], 1)
+				pred = class_pred.item()
+				label = y[-1].item()
+				if pred == label:
+					results['classcorrect'] += 1
+				else:
+					results['classfailed'] += 1
 
 	return results
 
 
-def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, vis=False):
+def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, writer, grasp_weighting=1.0, class_weighting=1.0, vis=False):
 	"""
 	Run one training epoch
 	:param epoch: Current epoch
@@ -139,7 +143,8 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 	:return:  Average Losses for Epoch
 	"""
 	results = {
-		'loss': 0,
+		'grasploss': 0,
+		'classloss': 0,
 		'losses': {
 		}
 	}
@@ -156,38 +161,47 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 
 			xc = x.to(device)
 			yc = [yy.to(device) for yy in y]
-			lossd = net.compute_loss(xc, yc)
+			lossd = net.compute_loss(xc, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
-			loss = lossd['loss'][loss_type]
+			grasploss = lossd['loss']['grasp']
+			classloss = lossd['loss']['class']
 
 			if batch_idx % 100 == 0:
-				logging.info('Epoch: {}, Batch: {}, Loss: {:0.4f}'.format(epoch, batch_idx, loss.item()))
+				logging.info('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
 
-			results['loss'] += loss.item()
+			results['grasploss'] += grasploss.item()
 			for ln, l in lossd['losses'].items():
 				if ln not in results['losses']:
 					results['losses'][ln] = 0
 				results['losses'][ln] += l.item()
 
 			optimizer.zero_grad()
-			loss.backward()
+			if loss_type == 'grasp':
+				grasploss.backward()
+			elif loss_type == 'class':
+				classloss.backward()
+			elif loss_type == 'combined':
+				grasploss.backward()
+				classloss.backward()
+			else:
+				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
 
-			# writer.add_images('image_batch_test', x)
-
-			# Display the images
+			# Display the images and add network to tensorboard graph
 			if vis:
-				imgs = []
-				n_img = min(4, x.shape[0])
-				for idx in range(n_img):
-					imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
-						x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
-				gridshow('Display', imgs,
-						 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
-						 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
-				cv2.waitKey(1)
+				writer.add_graph(net, xc)
+				# imgs = []
+				# n_img = min(4, x.shape[0])
+				# for idx in range(n_img):
+				# 	imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
+				# 		x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
+				# gridshow('Display', imgs,
+				# 		 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
+				# 		 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
+				# cv2.waitKey(1)
 
-	results['loss'] /= batch_idx
+	results['grasploss'] /= batch_idx
+	results['classloss'] /= batch_idx
 	for l in results['losses']:
 		results['losses'][l] /= batch_idx
 
@@ -270,34 +284,36 @@ def run():
 	best_classification = 0.0
 	for epoch in range(args.epochs):
 		logging.info('Beginning Epoch {:02d}'.format(epoch))
-		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
+		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, writer, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
 		# Log training losses to tensorboard
-		writer.add_scalar('loss/train_loss', train_results['loss'], epoch)
+		writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
+		writer.add_scalar('loss/class_loss', train_results['classloss'], epoch)
+
 		for n, l in train_results['losses'].items():
 			writer.add_scalar('train_loss/' + n, l, epoch)
 
 		# Run Validation
 		logging.info('Validating...')
 		test_results = validate(net, args.loss_type, device, val_data, args.val_batches)
-		logging.info('IoU results %d/%d = %f' % (test_results['correct'], test_results['correct'] + test_results['failed'],
-									 test_results['correct']/(test_results['correct']+test_results['failed'])))
-		if args.classify:
-			logging.info('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
-									 test_results['classcorrect']/(test_results['classcorrect']+test_results['classfailed'])))
+		logging.info('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
+									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
+		logging.info('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
+									test_results['classcorrect']/(test_results['classcorrect']+test_results['classfailed'])))
 
 		# Log validation results to tensorbaord
-		writer.add_scalar('loss/IOU', test_results['correct'] / (test_results['correct'] + test_results['failed']), epoch)
-		writer.add_scalar('loss/class', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
-		writer.add_scalar('loss/val_loss', test_results['loss'], epoch)
+		writer.add_scalar('loss/IOU', test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed']), epoch)
+		writer.add_scalar('loss/class_accuracy', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
+		writer.add_scalar('loss/val_class_loss', test_results['classloss'], epoch)
+		writer.add_scalar('loss/val_grasp_loss', test_results['grasploss'], epoch)
 		for n, l in test_results['losses'].items():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
 		# Save best performing network
-		iou = test_results['correct'] / (test_results['correct'] + test_results['failed'])
+		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
 		classification = test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed'])
 		if iou > best_iou or classification > best_classification or epoch == 0 or (epoch % 10) == 0:
-			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_class%0.2f' % (epoch, iou, classification)))
+			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_class_%0.2f' % (epoch, iou, classification)))
 			best_iou = iou
 			best_classification = classification
 

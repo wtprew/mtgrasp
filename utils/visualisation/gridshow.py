@@ -1,5 +1,5 @@
-import numpy as np
 import cv2
+import numpy as np
 
 
 def gridshow(name, imgs, scales, cmaps, width, border=10):
