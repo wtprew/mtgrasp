@@ -34,8 +34,8 @@ def parse_args():
 	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
 	parser.add_argument('--annotation-path', type=str, help='Directory to object classes', default='annotations/objects.txt')
 	parser.add_argument('--loss_type', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
-	parser.add_argument('--grasp-weight', type=float, default=1.0, help='Loss weight to modify the grasp weight')
-	parser.add_argument('--class-weight', type=float, default=1.0, help='Loss weight to modify the class weight')
+	parser.add_argument('--grasp_weight', type=float, default=1.0, help='Loss weight to modify the grasp weight')
+	parser.add_argument('--class_weight', type=float, default=1.0, help='Loss weight to modify the class weight')
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for training (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
@@ -126,11 +126,11 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 					results['classcorrect'] += 1
 				else:
 					results['classfailed'] += 1
-
+	
 	return results
 
 
-def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, writer, grasp_weighting=1.0, class_weighting=1.0, vis=False):
+def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, vis=False):
 	"""
 	Run one training epoch
 	:param epoch: Current epoch
@@ -181,15 +181,14 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 			elif loss_type == 'class':
 				classloss.backward()
 			elif loss_type == 'combined':
-				grasploss.backward()
+				grasploss.backward(retain_graph=True)
 				classloss.backward()
 			else:
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
 
 			# Display the images and add network to tensorboard graph
-			if vis:
-				writer.add_graph(net, xc)
+			# if vis:
 				# imgs = []
 				# n_img = min(4, x.shape[0])
 				# for idx in range(n_img):
@@ -284,7 +283,7 @@ def run():
 	best_classification = 0.0
 	for epoch in range(args.epochs):
 		logging.info('Beginning Epoch {:02d}'.format(epoch))
-		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, writer, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
+		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
 		# Log training losses to tensorboard
 		writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
@@ -295,7 +294,7 @@ def run():
 
 		# Run Validation
 		logging.info('Validating...')
-		test_results = validate(net, args.loss_type, device, val_data, args.val_batches)
+		test_results = validate(net, args.loss_type, device, val_data, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
 		logging.info('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
 		logging.info('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
@@ -304,8 +303,8 @@ def run():
 		# Log validation results to tensorbaord
 		writer.add_scalar('loss/IOU', test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed']), epoch)
 		writer.add_scalar('loss/class_accuracy', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
-		writer.add_scalar('loss/val_class_loss', test_results['classloss'], epoch)
-		writer.add_scalar('loss/val_grasp_loss', test_results['grasploss'], epoch)
+		writer.add_scalar('val_loss/val_class_loss', test_results['classloss'], epoch)
+		writer.add_scalar('val_loss/val_grasp_loss', test_results['grasploss'], epoch)
 		for n, l in test_results['losses'].items():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
@@ -318,6 +317,7 @@ def run():
 			best_classification = classification
 
 		writer.flush()
+	writer.close()
 
 
 if __name__ == '__main__':

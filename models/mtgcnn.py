@@ -48,13 +48,12 @@ class MTGCNN(nn.Module):
 		width_output = self.width_output(x)
 
 		#linear layers for classification
-
 		y = self.class_conv(x)
 		y = torch.flatten(y, 1)
 		y = F.relu(self.linear1(y))
 		y = F.relu(self.linear2(y))
 		class_out = self.class_output(y)
-		class_out = F.log_softmax(y, dim=0)
+		class_out = F.log_softmax(class_out, dim=0)
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
