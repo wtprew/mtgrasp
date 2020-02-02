@@ -8,6 +8,7 @@ import cv2
 import torch
 import torch.optim as optim
 import torch.utils.data
+import torchvision
 from tensorboard.plugins import projector
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
@@ -16,6 +17,7 @@ from models import get_network
 from models.common import post_process_output
 from utils.data import get_dataset
 from utils.dataset_processing import evaluation
+from utils.visualisation.confusion import plot_confusion_matrix
 from utils.visualisation.gridshow import gridshow
 
 logging.basicConfig(level=logging.INFO)
@@ -77,10 +79,14 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 		'grasploss': 0,
 		'classloss': 0,
 		'losses': {
-		}
+		},
+		'pred': [],
+		'label': [],
 	}
 
 	ld = len(val_data)
+	predicted = []
+	labels = []
 
 	with torch.no_grad():
 		batch_idx = 0
@@ -121,11 +127,16 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 				#test classification
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
 				pred = class_pred.item()
+				predicted.append(pred)
 				label = y[-1].item()
+				labels.append(label)
 				if pred == label:
 					results['classcorrect'] += 1
 				else:
 					results['classfailed'] += 1
+	
+	results['pred'] = predicted
+	results['label'] = labels
 	
 	return results
 
@@ -225,7 +236,7 @@ def run():
 
 	classes = None
 
-	if args.dataset == 'cornell_coco':
+	if args.dataset == 'cornell_coco' or 'cornell_rot':
 		print('Training dataset loading')
 		train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
@@ -271,7 +282,16 @@ def run():
 	optimizer = optim.Adam(net.parameters())
 	logging.info('Done')
 
+	# display a set of example images
+	exampleimages, examplelabels, _, _, _ = next(iter(train_data))
+	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
+	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
+	for i, (im, lab) in enumerate(zip(exampleimages, exampleclasses)):
+		writer.add_image('example_' + lab.replace(' ',''), im)
+
 	# Print model architecture.
+	writer.add_graph(net, exampleimages.to(device))
+	
 	summary(net, (input_channels, 300, 300))
 	f = open(os.path.join(save_folder, 'arch.txt'), 'w')
 	sys.stdout = f
@@ -307,6 +327,9 @@ def run():
 		writer.add_scalar('val_loss/val_grasp_loss', test_results['grasploss'], epoch)
 		for n, l in test_results['losses'].items():
 			writer.add_scalar('val_loss/' + n, l, epoch)
+
+		figure = plot_confusion_matrix(test_results['pred'], test_results['label'], classes)
+		writer.add_figure('Confusion_matrix', figure, global_step=epoch)
 
 		# Save best performing network
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])

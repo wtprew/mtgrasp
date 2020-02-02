@@ -1,6 +1,7 @@
 import argparse
 import logging
 
+import numpy as np
 import matplotlib.pyplot as plt
 import torch.utils.data
 
@@ -138,25 +139,6 @@ if __name__ == '__main__':
 	logging.info('Class Results: %d/%d = %f' % (classresults['correct'],
 							classresults['correct'] + classresults['failed'],
 							classresults['correct'] / (classresults['correct'] + graspresults['failed'])))
-	# import ipdb; ipdb.set_trace()
-	cm = confusion_matrix(gt, predicted, labels=list(range(0,70)))
-	# if args.vis:
-	fig = plt.figure()
-	ax = fig.add_subplot(111)
-	cax = ax.matshow(cm)
-	plt.title('Confusion matrix')
-	fig.colorbar(cax)
-	# import numpy as np
-	# values, counts = np.unique(gt, return_counts=True)
-	# values1, counts1 = np.unique(predicted, return_counts=True)
-	# print(values, counts)
-	# print(values1, counts1)
-	# ax.set_xticklabels([''] + classes)
-	# ax.set_yticklabels([''] + classes)
-	plt.xlabel('Predicted')
-	plt.ylabel('True')
-	plt.show()
-
 
 	if args.iou_eval:
 		logging.info('IOU Results: %d/%d = %f' % (graspresults['correct'],

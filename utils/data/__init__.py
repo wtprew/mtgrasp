@@ -8,5 +8,8 @@ def get_dataset(dataset_name):
     elif dataset_name == 'cornell_coco':
         from .cornell_coco import CornellCocoDataset
         return CornellCocoDataset
+    elif dataset_name == 'cornell_rot':
+        from .cornell_coco_rot import CornellCocoDataset
+        return CornellCocoDataset
     else:
         raise NotImplementedError('Dataset Type {} is Not implemented'.format(dataset_name))

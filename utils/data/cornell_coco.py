@@ -19,7 +19,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 	"""
 	def __init__(self, file_path, json, split=0.9, output_size=300, 
 				random_rotate=False, random_zoom=False, include_rgb=True, include_depth=False,
-				train=True, shuffle=True, seed=42):
+				train=True, shuffle=True, transform=None, seed=42):
 		"""
 		:param file_path: Cornell Dataset directory.
 		:param json: path to coco annotation file
@@ -59,6 +59,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		self.grasp_files = graspf
 		self.include_rgb = include_rgb
 		self.include_depth = include_depth
+		self.transform = transform
 
 		if include_depth is False and include_rgb is False:
 			raise ValueError('At least one of Depth or RGB must be specified.')
@@ -150,6 +151,9 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 			x = self.numpy_to_torch(depth_img)
 		elif self.include_rgb:
 			x = self.numpy_to_torch(rgb_img)
+
+		if self.transform is not None:
+			x = self.transform(x)
 
 		pos = self.numpy_to_torch(pos_img)
 		cos = self.numpy_to_torch(np.cos(2*ang_img))
