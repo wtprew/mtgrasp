@@ -13,7 +13,7 @@ def plot_confusion_matrix(pred, target, class_names):
 	class_names (array, shape = [n]): String names of the integer classes
 	"""
 
-	com = sklearn.metrics.confusion_matrix(target, pred)
+	cm = sklearn.metrics.confusion_matrix(target, pred)
 
 	figure = plt.figure(figsize=(8, 8), dpi=320, facecolour='w', edgecolor='k')
 	ax = figure.add_subplot(1,1,1)
