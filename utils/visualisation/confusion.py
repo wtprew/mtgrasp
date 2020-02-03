@@ -15,7 +15,7 @@ def plot_confusion_matrix(pred, target, class_names):
 
 	cm = sklearn.metrics.confusion_matrix(target, pred)
 
-	figure = plt.figure(figsize=(8, 8), dpi=320, facecolour='w', edgecolor='k')
+	figure = plt.figure(figsize=(8, 8), dpi=320, facecolor='w', edgecolor='k')
 	ax = figure.add_subplot(1,1,1)
 	ax.imshow(cm, cmap='Oranges')
 	plt.title("Confusion matrix")

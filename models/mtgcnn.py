@@ -53,7 +53,7 @@ class MTGCNN(nn.Module):
 		y = F.relu(self.linear1(y))
 		y = F.relu(self.linear2(y))
 		class_out = self.class_output(y)
-		class_out = F.log_softmax(class_out, dim=0)
+		# class_out = F.log_softmax(class_out, dim=0)
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
@@ -73,7 +73,8 @@ class MTGCNN(nn.Module):
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		class_loss = F.nll_loss(class_pred, y_class.squeeze(1))
+		class_loss = F.cross_entropy(class_pred, y_class.squeeze(1))
+		# class_loss = F.nll_loss(class_pred, y_class.squeeze(1))
 
 		return {
 			'loss': {
