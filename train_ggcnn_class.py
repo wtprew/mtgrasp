@@ -284,10 +284,14 @@ def run():
 
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _ = next(iter(train_data))
-	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
-	for i, (im, lab) in enumerate(zip(exampleimages, exampleclasses)):
-		writer.add_image('example_' + lab.replace(' ',''), im)
+	writer.add_images('trainexampleimages', exampleimages)
+	print('training example classes', exampleclasses)
+
+	exampleimages, examplelabels, _, _, _ = next(iter(val_data))
+	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
+	writer.add_images('valexampleimages', exampleimages)
+	print('validation example classes', exampleclasses)
 
 	# Print model architecture.
 	writer.add_graph(net, exampleimages.to(device))
@@ -328,7 +332,7 @@ def run():
 		for n, l in test_results['losses'].items():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
-		figure = plot_confusion_matrix(test_results['pred'], test_results['label'], classes)
+		figure = plot_confusion_matrix(test_results['label'], test_results['pred'], classes)
 		writer.add_figure('Confusion_matrix', figure, global_step=epoch)
 
 		# Save best performing network
