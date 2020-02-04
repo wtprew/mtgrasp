@@ -49,8 +49,8 @@ class MTGCNN2(nn.Module):
 		self.sin_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.width_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 
-		self.class_conv = nn.Conv2d(filter_sizes[5], 1, kernel_size=2)
-		self.linear1 = nn.Linear(300*300, 512)
+		self.class_conv = nn.Conv2d(filter_sizes[3], 1, kernel_size=2)
+		self.linear1 = nn.Linear(299*299, 512)
 		self.linear2 = nn.Linear(512, 256)
 		self.class_output = nn.Linear(256, num_classes)
 
