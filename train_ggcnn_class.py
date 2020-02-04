@@ -181,6 +181,7 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 				logging.info('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
 
 			results['grasploss'] += grasploss.item()
+			results['classloss'] += classloss.item()
 			for ln, l in lossd['losses'].items():
 				if ln not in results['losses']:
 					results['losses'][ln] = 0

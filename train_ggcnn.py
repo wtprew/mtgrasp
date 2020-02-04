@@ -9,10 +9,9 @@ import cv2
 import torch
 import torch.utils.data
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 
 from torchsummary import summary
-
-import tensorboardX
 
 from utils.visualisation.gridshow import gridshow
 
@@ -191,7 +190,7 @@ def run():
     save_folder = os.path.join(args.outdir, net_desc)
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
-    tb = tensorboardX.SummaryWriter(os.path.join(args.logdir, net_desc))
+    tb = SummaryWriter(os.path.join(args.logdir, net_desc))
 
     # Load Dataset
     logging.info('Loading {} Dataset...'.format(args.dataset.title()))
