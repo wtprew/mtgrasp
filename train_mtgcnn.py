@@ -286,12 +286,14 @@ def run():
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _ = next(iter(train_data))
 	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
-	writer.add_images('trainexampleimages', exampleimages)
+	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
+	writer.add_image('trainexampleimages', grid)
 	print('training example classes', exampleclasses)
 
 	exampleimages, examplelabels, _, _, _ = next(iter(val_data))
 	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
-	writer.add_images('valexampleimages', exampleimages)
+	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
+	writer.add_image('valexampleimages', grid)
 	print('validation example classes', exampleclasses)
 
 	# Print model architecture.

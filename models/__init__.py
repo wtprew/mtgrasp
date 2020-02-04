@@ -9,5 +9,8 @@ def get_network(network_name):
     elif network_name == 'mtgcnn':
         from .mtgcnn import MTGCNN
         return MTGCNN
+    elif network_name == 'mtgcnn2':
+        from .mtgcnn2 import MTGCNN2
+        return MTGCNN2
     else:
         raise NotImplementedError('Network {} is not implemented'.format(network_name))
