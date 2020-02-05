@@ -48,12 +48,17 @@ class MTGCNN2(nn.Module):
 		self.cos_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.sin_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.width_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
+		self.class_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=2)
 
-		self.class_conv = nn.Conv2d(filter_sizes[3], 1, kernel_size=2)
-		self.linear1 = nn.Linear(299*299, 512)
-		self.linear2 = nn.Linear(512, 256)
-		self.class_output = nn.Linear(256, num_classes)
-
+		self.linearlayers = nn.Sequential(
+			nn.Linear(299*299, 512),
+			nn.ReLU(inplace=True),
+			nn.Linear(512, 256),
+			nn.ReLU(inplace=True),
+			nn.Linear(256, num_classes),
+			nn.LogSoftmax(dim=1)
+		)
+		
 		for m in self.modules():
 			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
 				nn.init.xavier_uniform_(m.weight, gain=1)
@@ -66,14 +71,10 @@ class MTGCNN2(nn.Module):
 		sin_output = self.sin_output(x)
 		width_output = self.width_output(x)
 
-		y = self.class_conv(x)
-		y = torch.flatten(y, 1)
-		y = F.relu(self.linear1(y))
-		y = F.relu(self.linear2(y))
-		class_out = self.class_output(y)
-		class_out = F.log_softmax(class_out, dim=1)
+		y = self.class_output(x)
+		class_output = self.linearlayers(y)
 
-		return pos_output, cos_output, sin_output, width_output, class_out
+		return pos_output, cos_output, sin_output, width_output, class_output
 
 	def compute_loss(self, xc, yc, grasp_weight=1.0, class_weight=1.0):
 		"""
