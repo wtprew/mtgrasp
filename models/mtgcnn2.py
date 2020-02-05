@@ -58,7 +58,7 @@ class MTGCNN2(nn.Module):
 			nn.Linear(256, num_classes),
 			nn.LogSoftmax(dim=1)
 		)
-		
+
 		for m in self.modules():
 			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
 				nn.init.xavier_uniform_(m.weight, gain=1)
@@ -72,6 +72,7 @@ class MTGCNN2(nn.Module):
 		width_output = self.width_output(x)
 
 		y = self.class_output(x)
+		y = torch.flatten(y, 1)
 		class_output = self.linearlayers(y)
 
 		return pos_output, cos_output, sin_output, width_output, class_output
