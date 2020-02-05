@@ -4,3 +4,5 @@ train_ggcnn.py
 eval_ggcnn.py
 output
 tensorboard
+MNIST
+train_mnist.py

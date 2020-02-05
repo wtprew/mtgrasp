@@ -13,16 +13,10 @@ def plot_confusion_matrix(correct_labels, predict_labels, classes, title='Confus
 	    predict_labels                  : These are you predicted classification categories
 	    labels                          : This is a lit of labels which will be used to display the axix labels
 	    title='Confusion matrix'        : Title for your matrix
-	    tensor_name = 'MyFigure/image'  : Name for the output summay tensor
-
-	Returns:
-	    summary: TensorFlow summary 
-
-	Other itema to note:
-	    - Depending on the number of category and the data , you may have to modify the figzie, font sizes etc. 
-	    - Currently, some of the ticks dont line up due to rotations.
 	'''
-	cm = confusion_matrix(correct_labels, predict_labels)
+	tick_marks = np.arange(len(classes))
+
+	cm = confusion_matrix(correct_labels, predict_labels, labels=tick_marks)
 	if normalize:
 	    cm = cm.astype('float')*10 / cm.sum(axis=1)[:, np.newaxis]
 	    cm = np.nan_to_num(cm, copy=True)
@@ -33,8 +27,6 @@ def plot_confusion_matrix(correct_labels, predict_labels, classes, title='Confus
 	fig = matplotlib.figure.Figure(figsize=(7, 7), dpi=320, facecolor='w', edgecolor='k')
 	ax = fig.add_subplot(1, 1, 1)
 	im = ax.imshow(cm, cmap='Oranges')
-
-	tick_marks = np.arange(len(classes))
 
 	ax.set_xlabel('Predicted', fontsize=4)
 	ax.set_xticks(tick_marks)
