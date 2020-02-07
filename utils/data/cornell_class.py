@@ -59,6 +59,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		self.grasp_files = graspf
 		self.include_rgb = include_rgb
 		self.include_depth = include_depth
+		self.targets = self.coco.loadAnns(self.ids)
 		self.transform = transform
 
 		if include_depth is False and include_rgb is False:

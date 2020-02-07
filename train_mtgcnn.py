@@ -34,7 +34,6 @@ def parse_args():
 	parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard")')
 	parser.add_argument('--dataset-path', type=str, help='Path to dataset')
 	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
-	parser.add_argument('--annotation-path', type=str, help='Directory to object classes', default='annotations/objects.txt')
 	parser.add_argument('--loss_type', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
 	parser.add_argument('--grasp_weight', type=float, default=1.0, help='Loss weight to modify the grasp weight')
 	parser.add_argument('--class_weight', type=float, default=1.0, help='Loss weight to modify the class weight')
@@ -235,27 +234,17 @@ def run():
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
 
-	classes = None
-
-	if args.dataset == 'cornell_coco' or 'cornell_rot':
-		print('Training dataset loading')
-		train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
-							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, seed=args.random_seed)
-		classes = train_dataset.nms
-		supercategories = train_dataset.supcats
-		print('target classes', classes, 'target_superclasses', supercategories)
-		print('Validation set loading')
-		val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
-							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
-	else:
-		train_dataset = Dataset(args.dataset_path, start=0.0, end=args.split, ds_rotate=args.ds_rotate,
-							random_rotate=True, random_zoom=True,
-							include_depth=args.use_depth, include_rgb=args.use_rgb)
-		val_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
-						  random_rotate=True, random_zoom=True,
-						  include_depth=args.use_depth, include_rgb=args.use_rgb)
+	print('Training dataset loading')
+	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, seed=args.random_seed)
+	classes = train_dataset.nms
+	supercategories = train_dataset.supcats
+	print('target classes', classes, 'target_superclasses', supercategories)
+	print('Validation set loading')
+	val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
