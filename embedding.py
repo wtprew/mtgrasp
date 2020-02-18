@@ -61,7 +61,7 @@ def run():
 
 	val_dataset = val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 							random_rotate=False, random_zoom=False, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
+							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, seed=args.random_seed)
 	val_data = torch.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=args.num_workers)
 	classes = val_dataset.nms
 
@@ -79,9 +79,6 @@ def run():
 	writer.add_image('valexampleimages', grid, global_step=0)
 	print('validation example classes', exampleclasses)
 
-	# graspimages = val_dataset.rgb_files
-	# depthimages = val_dataset.depth_files
-	# labels = val_dataset.targets
 	images = None
 	targets = []
 
@@ -90,23 +87,29 @@ def run():
 			images = torch.cat((images, x), 0)
 		else:
 			images = x
-		targets.append(y[-1].item())
+		targets.append(classes[y[-1].item()])
 
-	writer.add_embedding(images.view(-1, input_channels*300*300), metadata=targets, global_step=0)
+	if images.data.shape[1] == 4:
+		writer.add_embedding(images.view(-1, input_channels*300*300), metadata=targets, label_img=images.data[:,1:,:,:], global_step=0)
+	else:
+		writer.add_embedding(images.view(-1, input_channels*300*300), metadata=targets, label_img=images.data, global_step=0)
 
 	print('initial embedding completed')
 
 	class_out = None
 
 	for i in images:
-		import ipdb; ipdb.set_trace()
 		i = i.unsqueeze(0).to(device)
 		if class_out is not None:
-			class_out = torch.cat((class_out, net(i)[-1], 0))
+			class_out = torch.cat((class_out, net(i)[-1][0].unsqueeze(0)), 0)
 		else:
-			class_out = net(i)[-1]
+			class_out = net(i)[-1][0].unsqueeze(0)
 
-	writer.add_embedding(class_out, metadata=targets, global_step=1)
+	if images.data.shape[1] == 4:
+		writer.add_embedding(class_out, metadata=targets, label_img=images.data[:,1:,:,:], global_step=1)
+	else:
+		writer.add_embedding(class_out, metadata=targets, label_img=images.data, global_step=1)
+
 	writer.flush()
 
 	writer.close()

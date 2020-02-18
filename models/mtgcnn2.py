@@ -48,16 +48,18 @@ class MTGCNN2(nn.Module):
 		self.cos_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.sin_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.width_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
-		self.class_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=2)
-
+		self.class_output = nn.Sequential(nn.Conv2d(filter_sizes[3], 1, kernel_size=1),
+			nn.ReLU(inplace=True),
+			nn.BatchNorm2d(1))
+		
 		self.linearlayers = nn.Sequential(
-			nn.Linear(299*299, 512),
+			nn.Linear(300*300, 512),
 			nn.ReLU(inplace=True),
 			nn.Linear(512, 256),
 			nn.ReLU(inplace=True),
-			nn.Linear(256, num_classes),
-			nn.LogSoftmax(dim=1)
 		)
+
+		self.fc = nn.Linear(256, num_classes)
 
 		for m in self.modules():
 			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
@@ -73,7 +75,9 @@ class MTGCNN2(nn.Module):
 
 		y = self.class_output(x)
 		y = torch.flatten(y, 1)
-		class_output = self.linearlayers(y)
+		y = self.linearlayers(y)
+		y = self.fc(y)
+		class_output = F.log_softmax(y, dim=1)
 
 		return pos_output, cos_output, sin_output, width_output, class_output
 

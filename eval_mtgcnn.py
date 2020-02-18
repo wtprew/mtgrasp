@@ -1,9 +1,10 @@
 import argparse
 import logging
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import torch.utils.data
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 
 from models.common import post_process_output
 from utils.data import get_dataset
@@ -62,17 +63,11 @@ if __name__ == '__main__':
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
 
-	if args.dataset == 'cornell_coco':
-		from sklearn.metrics import confusion_matrix
-		test_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+	test_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
-		classes = test_dataset.nms
+	classes = test_dataset.nms
 
-	elif args.dataset == 'cornell' or 'jacquard':
-		test_dataset = Dataset(args.dataset_path, start=args.split, end=1.0, ds_rotate=args.ds_rotate,
-							random_rotate=args.augment, random_zoom=args.augment, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
 	test_data = torch.utils.data.DataLoader(
 		test_dataset,
 		batch_size=1,
@@ -85,6 +80,8 @@ if __name__ == '__main__':
 	classresults = {'correct': 0, 'failed': 0}
 	predicted = []
 	gt = []
+	predlabels = []
+	targetlabels = []
 
 	if args.jacquard_output:
 		jo_fn = args.network + '_jacquard_output.txt'
@@ -102,7 +99,6 @@ if __name__ == '__main__':
 			q_img, ang_img, width_img = post_process_output(lossd['pred']['pos'], lossd['pred']['cos'],
 														lossd['pred']['sin'], lossd['pred']['width'])
 
-			from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 			#test classification
 			_, class_pred = torch.max(lossd['pred']['class'], 1)
 			pred = class_pred.item()
@@ -113,6 +109,8 @@ if __name__ == '__main__':
 				classresults['failed'] += 1
 			predicted.append(pred)
 			gt.append(label)
+			predlabels.append(classes[pred])
+			targetlabels.append(classes[label])
 
 			if args.iou_eval:
 				s = evaluation.calculate_iou_match(q_img, ang_img, test_data.dataset.get_gtbb(didx, rot, zoom),
@@ -134,7 +132,8 @@ if __name__ == '__main__':
 			if args.vis:
 				evaluation.plot_output(test_data.dataset.get_rgb(didx, rot, zoom, normalise=False),
 									   test_data.dataset.get_depth(didx,rot, zoom), q_img,
-									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img)
+									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img,
+									   classification=classes[pred])
 
 	logging.info('Class Results: %d/%d = %f' % (classresults['correct'],
 							classresults['correct'] + classresults['failed'],
