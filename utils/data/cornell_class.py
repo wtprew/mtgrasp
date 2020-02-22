@@ -124,7 +124,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		coco = self.coco
 		img_id = self.ids[idx]
 		ann_ids = coco.getAnnIds(imgIds=img_id)
-		target = coco.loadAnns(ann_ids)
+		target = coco.loadAnns(ann_ids)[0]
 
 		# Load the depth image
 		if self.include_depth:
@@ -153,17 +153,25 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		elif self.include_rgb:
 			x = self.numpy_to_torch(rgb_img)
 
-		if self.transform is not None:
-			x = self.transform(x)
-
 		pos = self.numpy_to_torch(pos_img)
 		cos = self.numpy_to_torch(np.cos(2*ang_img))
 		sin = self.numpy_to_torch(np.sin(2*ang_img))
 		width = self.numpy_to_torch(width_img)
 		
-		target = torch.tensor([target[0]['category_id']-1]) # rescale to range (0 to C-1)
+		target['segmentation'] = torch.as_tensor(target['segmentation'], dtype=torch.float32)		
+		target['area'] = torch.as_tensor(target['area'], dtype=torch.float32)
+		target['iscrowd'] = torch.as_tensor(target['iscrowd'], dtype=torch.int64)
+		target['ignore'] = torch.as_tensor(target['ignore'], dtype=torch.int64)
+		target['image_id'] = torch.as_tensor(target['image_id'], dtype=torch.int64)
+		target['bbox'] = torch.as_tensor(target['bbox'], dtype=torch.float32)
+		target['category_id'] = torch.as_tensor(target['category_id'] - 1, dtype=torch.int64) # rescale to range (0 to C-1)
+		target['id'] = torch.as_tensor(target['id'], dtype=torch.int64)
 
-		return x, (pos, cos, sin, width, target), idx, rot, zoom_factor
+		if self.transform is not None:
+			x = self.transform(x)
+			#need to implement same for bbox and segmentations
+
+		return x, target, (pos, cos, sin, width), idx, rot, zoom_factor
 
 	def __len__(self):
 		return len(self.ids)

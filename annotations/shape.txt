@@ -1,0 +1,4 @@
+rectangle
+hoop
+cylinder
+string

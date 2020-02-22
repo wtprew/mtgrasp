@@ -231,6 +231,9 @@ def run():
 		os.makedirs(save_folder)
 	writer = SummaryWriter(os.path.join(args.logdir, net_desc))
 
+	input_channels = 1*args.use_depth + 3*args.use_rgb
+	transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
+
 	# Load Dataset
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
@@ -238,14 +241,16 @@ def run():
 	print('Training dataset loading')
 	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, seed=args.random_seed)
+						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle,
+						transform=transformations, seed=args.random_seed)
 	classes = train_dataset.nms
 	supercategories = train_dataset.supcats
 	print('target classes', classes, 'target_superclasses', supercategories)
 	print('Validation set loading')
 	val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
+						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
+						transform=transformations, seed=args.random_seed)
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -264,7 +269,6 @@ def run():
 
 	# Load the network
 	logging.info('Loading Network...')
-	input_channels = 1*args.use_depth + 3*args.use_rgb
 	net = torch.load(args.network_path)
 	device = torch.device("cuda:0")
 	

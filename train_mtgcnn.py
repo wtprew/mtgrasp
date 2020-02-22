@@ -17,7 +17,7 @@ from models import get_network
 from models.common import post_process_output
 from utils.data import get_dataset
 from utils.dataset_processing import evaluation
-from utils.visualisation.confusion import plot_confusion_matrix
+from utils.visualisation.confusion import plot_confusion_matrix, count_elements, histogram_plot
 from utils.visualisation.gridshow import gridshow
 
 logging.basicConfig(level=logging.INFO)
@@ -198,18 +198,6 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
 
-			# Display the images and add network to tensorboard graph
-			# if vis:
-				# imgs = []
-				# n_img = min(4, x.shape[0])
-				# for idx in range(n_img):
-				# 	imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
-				# 		x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
-				# gridshow('Display', imgs,
-				# 		 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
-				# 		 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
-				# cv2.waitKey(1)
-
 	results['grasploss'] /= batch_idx
 	results['classloss'] /= batch_idx
 	for l in results['losses']:
@@ -234,17 +222,24 @@ def run():
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
 
+	input_channels = 1*args.use_depth + 3*args.use_rgb
+	# transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
+	transformations = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),
+									torchvision.transforms.RandomHorizontalFlip(0.5)])
+
 	print('Training dataset loading')
 	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, seed=args.random_seed)
+						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+						transform=transformations, seed=args.random_seed)
 	classes = train_dataset.nms
 	supercategories = train_dataset.supcats
 	print('target classes', classes, 'target_superclasses', supercategories)
 	print('Validation set loading')
 	val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, seed=args.random_seed)
+						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
+						transform=transformations, seed=args.random_seed)
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -263,7 +258,6 @@ def run():
 
 	# Load the network
 	logging.info('Loading Network...')
-	input_channels = 1*args.use_depth + 3*args.use_rgb
 	mtgcnn = get_network(args.network)
 
 	net = mtgcnn(input_channels=input_channels, num_classes=len(train_dataset.cats))
@@ -272,16 +266,26 @@ def run():
 	optimizer = optim.Adam(net.parameters())
 	logging.info('Done')
 
+	# Display frequency of classes
+	train_targets = count_elements(train_dataset.targets, classes)
+	test_targets = count_elements(val_dataset.targets, classes)
+
+	train_hist = histogram_plot(train_targets)
+	test_hist = histogram_plot(test_targets)
+	writer.add_figure('classfreq/training', train_hist, global_step=0)
+	writer.add_figure('classfreq/testing', test_hist, global_step=0)
+
 	# display a set of example images
-	exampleimages, examplelabels, _, _, _ = next(iter(train_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
-	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
+	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
+	import ipdb; ipdb.set_trace()
+	exampleclasses = [classes[lab] for lab in examplelabels]
+	grid = torchvision.utils.make_grid(exampleimages)
 	writer.add_image('trainexampleimages', grid)
 	print('training example classes', exampleclasses)
 
-	exampleimages, examplelabels, _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
-	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
+	exampleimages, examplelabels, _. _, _, _ = next(iter(val_data))
+	exampleclasses = [classes[lab] for lab in examplelabels]
+	grid = torchvision.utils.make_grid(exampleimages)
 	writer.add_image('valexampleimages', grid)
 	print('validation example classes', exampleclasses)
 
@@ -325,7 +329,7 @@ def run():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
 		figure = plot_confusion_matrix(test_results['label'], test_results['pred'], classes)
-		writer.add_figure('Confusion_matrix', figure, global_step=epoch)
+		writer.add_figure('confusion_matrix', figure, global_step=epoch)
 
 		# Save best performing network
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])

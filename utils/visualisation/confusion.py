@@ -2,6 +2,7 @@ import itertools
 import re
 
 import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import confusion_matrix
 
@@ -42,5 +43,32 @@ def plot_confusion_matrix(correct_labels, predict_labels, classes, title='Confus
 
 	for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
 	    ax.text(j, i, format(cm[i, j], 'd') if cm[i,j]!=0 else '.', horizontalalignment="center", fontsize=6, verticalalignment='center', color= "black")
+
+	return fig
+
+def count_elements(seq, classes) -> dict:
+	hist = {}
+	for i in seq:
+		cat = i['category_id'] - 1
+		name = classes[cat]
+		hist[name] = hist.get(name, 0) + 1
+	return hist
+
+def histogram_plot(freq):
+	tick_marks = np.arange(len(freq.keys()))
+
+	fig = matplotlib.figure.Figure(figsize=(7, 7), dpi=320, facecolor='w', edgecolor='k')
+	ax = fig.add_subplot(1, 1, 1)
+
+	ax.bar(freq.keys(), freq.values())
+
+	ax.set_xlabel('Classes', fontsize=4)
+	ax.set_xticks(tick_marks)
+	c = ax.set_xticklabels(freq.keys(), fontsize=4, rotation=-90,  ha='center')
+	ax.xaxis.set_label_position('bottom')
+	ax.xaxis.tick_bottom()
+
+	ax.set_ylabel('Count', fontsize=4)
+	ax.yaxis.tick_left()
 
 	return fig

@@ -11,7 +11,7 @@ import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 
 from models import get_network
-from utils.data import get_dataset
+from utils.data.cornell_class import CornellCocoDataset
 from utils.dataset_processing import evaluation
 
 
@@ -49,7 +49,6 @@ def load_images(files):
 	return images
 
 def run():
-
 	args = parse_args()
 
 	dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
@@ -57,20 +56,18 @@ def run():
 
 	writer = SummaryWriter(os.path.join(args.logdir, net_desc))
 
-	Dataset = get_dataset(args.dataset)
+	input_channels = 1*args.use_depth + 3*args.use_rgb
+	transformations = transforms.Compose([transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
+	device = torch.device("cuda:0")
 
-	val_dataset = val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+	val_dataset = val_dataset = CornellCocoDataset(args.dataset_path, json=args.json, split=args.split,
 							random_rotate=False, random_zoom=False, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, seed=args.random_seed)
+							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+							transform=transformations, seed=args.random_seed)
 	val_data = torch.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=args.num_workers)
 	classes = val_dataset.nms
 
-	input_channels = 1*args.use_depth + 3*args.use_rgb
-	device = torch.device("cuda:0")
-	model = get_network(args.network)
-
-	net = model().to(device)
-	net = torch.load(args.network_path)
+	net = torch.load(args.network_path).to(device)
 	net.eval()
 
 	exampleimages, examplelabels, _, _, _= next(iter(val_data))
@@ -89,10 +86,7 @@ def run():
 			images = x
 		targets.append(classes[y[-1].item()])
 
-	if images.data.shape[1] == 4:
-		writer.add_embedding(images.view(-1, input_channels*300*300), metadata=targets, label_img=images.data[:,1:,:,:], global_step=0)
-	else:
-		writer.add_embedding(images.view(-1, input_channels*300*300), metadata=targets, label_img=images.data, global_step=0)
+	writer.add_embedding(images.view(-1, input_channels*300*300), metadata=targets, global_step=0)
 
 	print('initial embedding completed')
 
@@ -105,10 +99,7 @@ def run():
 		else:
 			class_out = net(i)[-1][0].unsqueeze(0)
 
-	if images.data.shape[1] == 4:
-		writer.add_embedding(class_out, metadata=targets, label_img=images.data[:,1:,:,:], global_step=1)
-	else:
-		writer.add_embedding(class_out, metadata=targets, label_img=images.data, global_step=1)
+	writer.add_embedding(class_out, metadata=targets, global_step=1)
 
 	writer.flush()
 

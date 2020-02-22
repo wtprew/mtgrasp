@@ -172,7 +172,7 @@ class DepthImage(Image):
     def inpaint(self, missing_value=0):
         """
         Inpaint missing values in depth image.
-        :param missing_value: Value to fill in teh depth image.
+        :param missing_value: Value to fill in the depth image.
         """
         # cv2 inpainting doesn't handle the border properly
         # https://stackoverflow.com/questions/25974033/inpainting-depth-map-still-a-black-image-border
@@ -190,8 +190,8 @@ class DepthImage(Image):
 
     def gradients(self):
         """
-        Compute gradients of the depth image using Sobel filtesr.
-        :return: Gradients in X direction, Gradients in Y diretion, Magnitude of XY gradients.
+        Compute gradients of the depth image using Sobel filters.
+        :return: Gradients in X direction, Gradients in Y direction, Magnitude of XY gradients.
         """
         grad_x = cv2.Sobel(self.img, cv2.CV_64F, 1, 0, borderType=cv2.BORDER_DEFAULT)
         grad_y = cv2.Sobel(self.img, cv2.CV_64F, 0, 1, borderType=cv2.BORDER_DEFAULT)
