@@ -91,12 +91,13 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 	with torch.no_grad():
 		batch_idx = 0
 		while batch_idx < batches_per_epoch:
-			for x, y, didx, rot, zoom_factor in val_data:
+			for x, target, y, didx, rot, zoom_factor in val_data:
 				batch_idx += 1
 				if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
 					break
 
 				xc = x.to(device)
+				target = target['category_id'].to(device)
 				yc = [yy.to(device) for yy in y]
 				lossd = net.compute_loss(xc, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
@@ -128,7 +129,7 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
 				pred = class_pred.item()
 				predicted.append(pred)
-				label = y[-1].item()
+				label = target.item()
 				labels.append(label)
 				if pred == label:
 					results['classcorrect'] += 1
@@ -165,14 +166,15 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 	batch_idx = 0
 	# Use batches per epoch to make training on different sized datasets (cornell/jacquard) more equivalent.
 	while batch_idx < batches_per_epoch:
-		for x, y, _, _, _ in train_data:
+		for x, target, y, _, _, _ in train_data:
 			batch_idx += 1
 			if batch_idx >= batches_per_epoch:
 				break
 
 			xc = x.to(device)
+			target = target['category_id'].to(device)
 			yc = [yy.to(device) for yy in y]
-			lossd = net.compute_loss(xc, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
 			grasploss = lossd['loss']['grasp']
 			classloss = lossd['loss']['class']
@@ -200,16 +202,16 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 			optimizer.step()
 
 			# Display the images and add network to tensorboard graph
-			# if vis:
-				# imgs = []
-				# n_img = min(4, x.shape[0])
-				# for idx in range(n_img):
-				# 	imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
-				# 		x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
-				# gridshow('Display', imgs,
-				# 		 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
-				# 		 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
-				# cv2.waitKey(1)
+			if vis:
+				imgs = []
+				n_img = min(4, x.shape[0])
+				for idx in range(n_img):
+					imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
+						x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
+				gridshow('Display', imgs,
+						 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
+						 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
+				cv2.waitKey(1)
 
 	results['grasploss'] /= batch_idx
 	results['classloss'] /= batch_idx
@@ -290,14 +292,14 @@ def run():
 	logging.info('Done')
 
 	# display a set of example images
-	exampleimages, examplelabels, _, _, _ = next(iter(train_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
+	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
+	exampleclasses = [classes[lab] for lab in examplelabels['category_id']]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('trainexampleimages', grid)
 	print('training example classes', exampleclasses)
 
-	exampleimages, examplelabels, _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[-1]]
+	exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
+	exampleclasses = [classes[lab] for lab in examplelabels['category_id']]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('valexampleimages', grid)
 	print('validation example classes', exampleclasses)

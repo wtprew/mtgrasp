@@ -90,14 +90,15 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 	with torch.no_grad():
 		batch_idx = 0
 		while batch_idx < batches_per_epoch:
-			for x, y, didx, rot, zoom_factor in val_data:
+			for x, targets, y, didx, rot, zoom_factor in val_data:
 				batch_idx += 1
 				if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
 					break
 
 				xc = x.to(device)
+				target = targets['category_id'].to(device)
 				yc = [yy.to(device) for yy in y]
-				lossd = net.compute_loss(xc, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
@@ -127,7 +128,7 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
 				pred = class_pred.item()
 				predicted.append(pred)
-				label = y[-1].item()
+				label = target.item()
 				labels.append(label)
 				if pred == label:
 					results['classcorrect'] += 1
@@ -164,14 +165,15 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 	batch_idx = 0
 	# Use batches per epoch to make training on different sized datasets (cornell/jacquard) more equivalent.
 	while batch_idx < batches_per_epoch:
-		for x, y, _, _, _ in train_data:
+		for x, targets, y, _, _, _ in train_data:
 			batch_idx += 1
 			if batch_idx >= batches_per_epoch:
 				break
 
 			xc = x.to(device)
+			target = targets['category_id'].to(device)
 			yc = [yy.to(device) for yy in y]
-			lossd = net.compute_loss(xc, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
 			grasploss = lossd['loss']['grasp']
 			classloss = lossd['loss']['class']
@@ -224,8 +226,7 @@ def run():
 
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	# transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
-	transformations = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),
-									torchvision.transforms.RandomHorizontalFlip(0.5)])
+	transformations = None
 
 	print('Training dataset loading')
 	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
@@ -277,15 +278,14 @@ def run():
 
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
-	import ipdb; ipdb.set_trace()
-	exampleclasses = [classes[lab] for lab in examplelabels]
-	grid = torchvision.utils.make_grid(exampleimages)
+	exampleclasses = [classes[lab] for lab in examplelabels['category_id']]
+	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('trainexampleimages', grid)
 	print('training example classes', exampleclasses)
 
-	exampleimages, examplelabels, _. _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels]
-	grid = torchvision.utils.make_grid(exampleimages)
+	exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
+	exampleclasses = [classes[lab] for lab in examplelabels['category_id']]
+	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('valexampleimages', grid)
 	print('validation example classes', exampleclasses)
 

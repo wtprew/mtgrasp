@@ -49,9 +49,9 @@ class MTGCNN2(nn.Module):
 		self.sin_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.width_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.class_output = nn.Sequential(nn.Conv2d(filter_sizes[3], 1, kernel_size=1),
-			nn.ReLU(inplace=True),
-			nn.BatchNorm2d(1))
-		
+				nn.ReLU(inplace=True),
+				nn.BatchNorm2d(1))
+
 		self.linearlayers = nn.Sequential(
 			nn.Linear(300*300, 512),
 			nn.ReLU(inplace=True),
@@ -73,15 +73,16 @@ class MTGCNN2(nn.Module):
 		sin_output = self.sin_output(x)
 		width_output = self.width_output(x)
 
-		y = self.class_output(x)
-		y = torch.flatten(y, 1)
+		class_output = self.class_output(x)
+		# y = self.batch_norm(F.relu(class_output))
+		y = torch.flatten(class_output, 1)
 		y = self.linearlayers(y)
 		y = self.fc(y)
-		class_output = F.log_softmax(y, dim=1)
+		class_out = F.log_softmax(y, dim=1)
 
-		return pos_output, cos_output, sin_output, width_output, class_output
+		return pos_output, cos_output, sin_output, width_output, class_out
 
-	def compute_loss(self, xc, yc, grasp_weight=1.0, class_weight=1.0):
+	def compute_loss(self, xc, target, yc, grasp_weight=1.0, class_weight=1.0):
 		"""
 		xc: prediction from network
 		yc: ground truth in same order as xc
@@ -89,7 +90,8 @@ class MTGCNN2(nn.Module):
 		class_weight: weighting for loss function to be assigned to class
 		"""
 		
-		y_pos, y_cos, y_sin, y_width, y_class = yc
+		y_pos, y_cos, y_sin, y_width = yc
+		y_class = target
 		pos_pred, cos_pred, sin_pred, width_pred, class_pred = self(xc)
 
 		p_loss = F.mse_loss(pos_pred, y_pos)
@@ -97,8 +99,7 @@ class MTGCNN2(nn.Module):
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		# class_loss = F.cross_entropy(class_pred, y_class.squeeze(1))
-		class_loss = F.nll_loss(class_pred, y_class.squeeze(1))
+		class_loss = F.nll_loss(class_pred, y_class)
 
 		return {
 			'loss': {
