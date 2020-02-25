@@ -40,6 +40,7 @@ def parse_args():
 	parser.add_argument('--class_weight', type=float, default=1.0, help='Loss weight to modify the class weight')
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for training (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
+	parser.add_argument('--superclass', action='store_true', help='use superclasses for training')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
 	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
@@ -99,7 +100,7 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 				xc = x.to(device)
 				target = target['category_id'].to(device)
 				yc = [yy.to(device) for yy in y]
-				lossd = net.compute_loss(xc, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
@@ -234,7 +235,8 @@ def run():
 	writer = SummaryWriter(os.path.join(args.logdir, net_desc))
 
 	input_channels = 1*args.use_depth + 3*args.use_rgb
-	transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
+	# transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
+	transformations = None
 
 	# Load Dataset
 	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
@@ -245,14 +247,19 @@ def run():
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle,
 						transform=transformations, seed=args.random_seed)
-	classes = train_dataset.nms
-	supercategories = train_dataset.supcats
-	print('target classes', classes, 'target_superclasses', supercategories)
+	categories = train_dataset.catnms
+	supercategories = train_dataset.supercats
+	print('target classes', categories, 'target_superclasses', supercategories)
 	print('Validation set loading')
 	val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
 						transform=transformations, seed=args.random_seed)
+	
+	if args.superclass == True:
+		classes = supercategories
+	else:
+		classes = categories
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -344,7 +351,7 @@ def run():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
 		figure = plot_confusion_matrix(test_results['label'], test_results['pred'], classes)
-		writer.add_figure('Confusion_matrix', figure, global_step=epoch)
+		writer.add_figure('confusion_matrix', figure, global_step=epoch)
 
 		# Save best performing network
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])

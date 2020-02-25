@@ -41,8 +41,8 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 			self.ids = testids
 
 		self.cats = self.coco.loadCats(self.coco.getCatIds())
-		self.nms = [cat['name'] for cat in self.cats]
-		self.supcats = set([cat['supercategory'] for cat in self.cats])
+		self.catnms = [cat['name'] for cat in self.cats]
+		self.supercats = list(set([cat['supercategory'] for cat in self.cats]))
 
 		rgbf = []
 		for imgFile in self.coco.loadImgs(self.ids):
@@ -125,6 +125,8 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		img_id = self.ids[idx]
 		ann_ids = coco.getAnnIds(imgIds=img_id)
 		target = coco.loadAnns(ann_ids)[0]
+		cat = coco.loadCats(target['category_id'])[0]
+		supercat = self.supercats.index(cat['supercategory'])
 
 		# Load the depth image
 		if self.include_depth:
@@ -166,10 +168,10 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		target['bbox'] = torch.as_tensor(target['bbox'], dtype=torch.float32)
 		target['category_id'] = torch.as_tensor(target['category_id'] - 1, dtype=torch.int64) # rescale to range (0 to C-1)
 		target['id'] = torch.as_tensor(target['id'], dtype=torch.int64)
+		target['supercategory_id'] = torch.as_tensor(supercat, dtype=torch.int64)
 
 		if self.transform is not None:
 			x = self.transform(x)
-			#need to implement same for bbox and segmentations
 
 		return x, target, (pos, cos, sin, width), idx, rot, zoom_factor
 

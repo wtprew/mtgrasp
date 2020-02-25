@@ -39,6 +39,7 @@ def parse_args():
 	parser.add_argument('--class_weight', type=float, default=1.0, help='Loss weight to modify the class weight')
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for training (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
+	parser.add_argument('--superclass', action='store_true', help='use superclasses for training')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
 	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
@@ -233,14 +234,19 @@ def run():
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
 						transform=transformations, seed=args.random_seed)
-	classes = train_dataset.nms
-	supercategories = train_dataset.supcats
-	print('target classes', classes, 'target_superclasses', supercategories)
+	categories = train_dataset.catnms
+	supercategories = train_dataset.supercats
+	print('target classes', categories, 'target_superclasses', supercategories)
 	print('Validation set loading')
 	val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
 						transform=transformations, seed=args.random_seed)
+	
+	if args.superclass == True:
+		classes = supercategories
+	else:
+		classes = categories
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -261,7 +267,7 @@ def run():
 	logging.info('Loading Network...')
 	mtgcnn = get_network(args.network)
 
-	net = mtgcnn(input_channels=input_channels, num_classes=len(train_dataset.cats))
+	net = mtgcnn(input_channels=input_channels, num_classes=len(classes))
 	device = torch.device("cuda:0")
 	net = net.to(device)
 	optimizer = optim.Adam(net.parameters())
