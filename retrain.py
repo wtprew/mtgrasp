@@ -61,7 +61,7 @@ def parse_args():
 	return args
 
 
-def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0):
+def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_id', grasp_weighting=1.0, class_weighting=1.0):
 	"""
 	Run validation.
 	:param net: Network
@@ -98,7 +98,7 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 					break
 
 				xc = x.to(device)
-				target = target['category_id'].to(device)
+				target = target[key].to(device)
 				yc = [yy.to(device) for yy in y]
 				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
@@ -143,7 +143,7 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weightin
 	return results
 
 
-def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, vis=False):
+def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, key='category_id', grasp_weighting=1.0, class_weighting=1.0, vis=False):
 	"""
 	Run one training epoch
 	:param epoch: Current epoch
@@ -173,7 +173,7 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 				break
 
 			xc = x.to(device)
-			target = target['category_id'].to(device)
+			target = target[key].to(device)
 			yc = [yy.to(device) for yy in y]
 			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
@@ -258,8 +258,10 @@ def run():
 	
 	if args.superclass == True:
 		classes = supercategories
+		key = 'supercategory_id'
 	else:
 		classes = categories
+		key = 'category_id'
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -300,13 +302,13 @@ def run():
 
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
-	exampleclasses = [classes[lab] for lab in examplelabels['category_id']]
+	exampleclasses = [classes[lab] for lab in examplelabels[key]]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('trainexampleimages', grid)
 	print('training example classes', exampleclasses)
 
 	exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels['category_id']]
+	exampleclasses = [classes[lab] for lab in examplelabels[key]]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('valexampleimages', grid)
 	print('validation example classes', exampleclasses)
@@ -325,7 +327,7 @@ def run():
 	best_classification = 0.0
 	for epoch in range(args.epochs):
 		logging.info('Beginning Epoch {:02d}'.format(epoch))
-		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
+		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
 		# Log training losses to tensorboard
 		writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
@@ -336,7 +338,7 @@ def run():
 
 		# Run Validation
 		logging.info('Validating...')
-		test_results = validate(net, args.loss_type, device, val_data, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
+		test_results = validate(net, args.loss_type, device, val_data, args.val_batches, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
 		logging.info('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
 		logging.info('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
