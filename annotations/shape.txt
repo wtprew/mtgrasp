@@ -1,4 +1,4 @@
-box
-hoop
+cube
 cylinder
-string
+irregular
+sphere

@@ -42,7 +42,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 
 		self.cats = self.coco.loadCats(self.coco.getCatIds())
 		self.catnms = [cat['name'] for cat in self.cats]
-		self.supercats = list(set([cat['supercategory'] for cat in self.cats]))
+		self.supercats = sorted(list(set([cat['supercategory'] for cat in self.cats])))
 
 		rgbf = []
 		for imgFile in self.coco.loadImgs(self.ids):

@@ -1,9 +1,10 @@
-wood
-soft plastic
-hard plastic
-glass
-metal
 cardboard
 ceramic
 fabric
+glass
+hard plastic
+metal
 organic
+soft plastic
+wood
+mixed

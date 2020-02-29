@@ -89,7 +89,7 @@ if __name__ == '__main__':
 			pass
 
 	with torch.no_grad():
-		for idx, (x, y, didx, rot, zoom) in enumerate(test_data):
+		for idx, (x, target, y, didx, rot, zoom) in enumerate(test_data):
 
 			logging.info('Processing {}/{}'.format(idx+1, len(test_data)))
 			xc = x.to(device)

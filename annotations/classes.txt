@@ -1,16 +1,9 @@
-tool
-utensil
-stationary
-plant
-box
-bottle
-jar
-bag
-headwear
-eyewear
-footwear
-brush
-sweet
-drink
+accessory
+electronic
+work tool
+cooking utensil
+crockery
+cleaning tool
+food
 toy
-tech
+container
