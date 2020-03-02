@@ -20,8 +20,6 @@ from utils.dataset_processing import evaluation
 from utils.visualisation.confusion import plot_confusion_matrix
 from utils.visualisation.gridshow import gridshow
 
-logging.basicConfig(level=logging.INFO)
-
 # cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
 
 def parse_args():
@@ -181,7 +179,7 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 			classloss = lossd['loss']['class']
 
 			if batch_idx % 100 == 0:
-				logging.info('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
+				print('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
 
 			results['grasploss'] += grasploss.item()
 			results['classloss'] += classloss.item()
@@ -239,7 +237,7 @@ def run():
 	transformations = None
 
 	# Load Dataset
-	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
+	print('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
 
 	print('Training dataset loading')
@@ -276,10 +274,10 @@ def run():
 		shuffle=False,
 		num_workers=args.num_workers
 	)
-	logging.info('Done')
+	print('Done')
 
 	# Load the network
-	logging.info('Loading Network...')
+	print('Loading Network...')
 	net = torch.load(args.network_path)
 	device = torch.device("cuda:0")
 	
@@ -298,7 +296,7 @@ def run():
 	net = net.to(device)
 	params = [p for p in net.parameters() if p.requires_grad]
 	optimizer = optim.Adam(params)
-	logging.info('Done')
+	print('Done')
 
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
@@ -326,7 +324,7 @@ def run():
 	best_iou = 0.0
 	best_classification = 0.0
 	for epoch in range(args.epochs):
-		logging.info('Beginning Epoch {:02d}'.format(epoch))
+		print('Beginning Epoch {:02d}'.format(epoch))
 		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
 		# Log training losses to tensorboard
@@ -337,11 +335,11 @@ def run():
 			writer.add_scalar('train_loss/' + n, l, epoch)
 
 		# Run Validation
-		logging.info('Validating...')
+		print('Validating...')
 		test_results = validate(net, args.loss_type, device, val_data, args.val_batches, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
-		logging.info('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
+		print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
-		logging.info('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
+		print('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
 									test_results['classcorrect']/(test_results['classcorrect']+test_results['classfailed'])))
 
 		# Log validation results to tensorbaord

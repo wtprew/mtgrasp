@@ -10,8 +10,6 @@ from models.common import post_process_output
 from utils.data import get_dataset
 from utils.dataset_processing import evaluation, grasp
 
-logging.basicConfig(level=logging.INFO)
-
 def parse_args():
 	parser = argparse.ArgumentParser(description='Evaluate GG-CNN')
 
@@ -60,7 +58,7 @@ if __name__ == '__main__':
 	device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 	# Load Dataset
-	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
+	print('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
 
 	test_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
@@ -74,7 +72,7 @@ if __name__ == '__main__':
 		shuffle=False,
 		num_workers=args.num_workers
 	)
-	logging.info('Done')
+	print('Done')
 
 	graspresults = {'correct': 0, 'failed': 0}
 	classresults = {'correct': 0, 'failed': 0}
@@ -91,7 +89,7 @@ if __name__ == '__main__':
 	with torch.no_grad():
 		for idx, (x, target, y, didx, rot, zoom) in enumerate(test_data):
 
-			logging.info('Processing {}/{}'.format(idx+1, len(test_data)))
+			print('Processing {}/{}'.format(idx+1, len(test_data)))
 			xc = x.to(device)
 			yc = [yi.to(device) for yi in y]
 			lossd = net.compute_loss(xc, yc)
@@ -135,14 +133,14 @@ if __name__ == '__main__':
 									   ang_img, no_grasps=args.n_grasps, grasp_width_img=width_img,
 									   classification=classes[pred])
 
-	logging.info('Class Results: %d/%d = %f' % (classresults['correct'],
+	print('Class Results: %d/%d = %f' % (classresults['correct'],
 							classresults['correct'] + classresults['failed'],
 							classresults['correct'] / (classresults['correct'] + graspresults['failed'])))
 
 	if args.iou_eval:
-		logging.info('IOU Results: %d/%d = %f' % (graspresults['correct'],
+		print('IOU Results: %d/%d = %f' % (graspresults['correct'],
 							  graspresults['correct'] + graspresults['failed'],
 							  graspresults['correct'] / (graspresults['correct'] + graspresults['failed'])))
 
 	if args.jacquard_output:
-		logging.info('Jacquard output saved to {}'.format(jo_fn))
+		print('Jacquard output saved to {}'.format(jo_fn))
