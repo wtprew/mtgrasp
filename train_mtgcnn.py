@@ -39,7 +39,7 @@ def parse_args():
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
 	parser.add_argument('--superclass', action='store_true', help='use superclasses for training')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
-	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
+	parser.add_argument('--random-seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--num-workers', type=int, default=8, help='Dataset workers')
 
@@ -210,6 +210,8 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 def run():
 	args = parse_args()
 
+	print("args called: ", args)
+	
 	# Set-up output directories
 	dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
 	net_desc = '{}_{}'.format(dt, '_'.join(args.description.split()))
