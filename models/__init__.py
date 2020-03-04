@@ -15,5 +15,11 @@ def get_network(network_name):
     elif network_name == 'mtgcnnb':
         from .mtgcnnbranch import MTGCNNB
         return MTGCNNB
+    elif network_name == 'mtgcnnb2':
+        from .mtgcnnbranch2 import MTGCNNB2
+        return MTGCNNB2
+    elif network_name == 'mtgcnnb3':
+        from .mtgcnnbranch3 import MTGCNNB3
+        return MTGCNNB3
     else:
         raise NotImplementedError('Network {} is not implemented'.format(network_name))
