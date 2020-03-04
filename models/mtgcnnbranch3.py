@@ -56,11 +56,11 @@ class MTGCNNB3(nn.Module):
 		self.cos_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.sin_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 		self.width_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
-		self.class_output = nn.Sequential(nn.Conv2d(filter_sizes[3], 1, kernel_size=1),
+		self.class_output = nn.Sequential(nn.Conv2d(filter_sizes[2], 1, kernel_size=1),
 				nn.ReLU(inplace=True))
 
 		self.linearlayers = nn.Sequential(
-			nn.Linear(75*75, 512),
+			nn.Linear(67*67, 512),
 			nn.Dropout(p=0.5, inplace=True),
 			nn.ReLU(inplace=True),
 			nn.Linear(512, 256),
@@ -83,6 +83,8 @@ class MTGCNNB3(nn.Module):
 		sin_output = self.sin_output(x)
 		width_output = self.width_output(x)
 
+		y = self.features3(y)
+		import ipdb; ipdb.set_trace()
 		class_output = self.class_output(y)
 		# y = self.batch_norm(F.relu(class_output))
 		y = torch.flatten(class_output, 1)
