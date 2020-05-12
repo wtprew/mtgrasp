@@ -5,20 +5,24 @@ import os
 import sys
 
 import cv2
+import numpy as np
 import torch
 import torch.optim as optim
 import torch.utils.data
 import torchvision
+import torchvision.transforms as transforms
 from tensorboard.plugins import projector
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
 
 from models import get_network
 from models.common import post_process_output
+from models.salgrasp import MultiTaskLoss
 from utils.data import get_dataset
 from utils.dataset_processing import evaluation
-from utils.visualisation.confusion import plot_confusion_matrix
+from utils.visualisation.confusion import plot_confusion_matrix, count_elements, histogram_plot
 from utils.visualisation.gridshow import gridshow
+from utils.metric import cal_pr_mae_meanf, cal_maxf, AvgMeter
 
 # cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
 
@@ -31,7 +35,6 @@ def parse_args():
 	# Dataset & Data & Training
 	parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard")')
 	parser.add_argument('--dataset-path', type=str, help='Path to dataset')
-	parser.add_argument('--network-path', type=str, help='Path to dataset')
 	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
 	parser.add_argument('--loss_type', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
 	parser.add_argument('--grasp_weight', type=float, default=1.0, help='Loss weight to modify the grasp weight')
@@ -40,7 +43,7 @@ def parse_args():
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
 	parser.add_argument('--superclass', action='store_true', help='use superclasses for training')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
-	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
+	parser.add_argument('--random-seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--num-workers', type=int, default=8, help='Dataset workers')
 
@@ -51,15 +54,15 @@ def parse_args():
 
 	# Logging etc.
 	parser.add_argument('--description', type=str, default='', help='Training description')
-	parser.add_argument('--outdir', type=str, default='output/models/', help='Training Output Directory')
-	parser.add_argument('--logdir', type=str, default='tensorboard/', help='Log directory')
+	parser.add_argument('--outdir', type=str, default='output/models/Saliency_mt', help='Training Output Directory')
+	parser.add_argument('--logdir', type=str, default='tensorboard/Saliency_mt', help='Log directory')
 	parser.add_argument('--vis', action='store_true', help='Visualise the training process')
 
 	args = parser.parse_args()
 	return args
 
 
-def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_id', grasp_weighting=1.0, class_weighting=1.0):
+def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0):
 	"""
 	Run validation.
 	:param net: Network
@@ -77,39 +80,50 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_
 		'classfailed': 0,
 		'grasploss': 0,
 		'classloss': 0,
+		'loss': 0,
+		'logvars': [],
 		'losses': {
 		},
-		'pred': [],
-		'label': [],
+		'maxf': 0,
+		'meanf': 0,
+		'mae': 0,
 	}
 
 	ld = len(val_data)
-	predicted = []
-	labels = []
+	pres = [AvgMeter() for _ in range(256)]
+	recs = [AvgMeter() for _ in range(256)]
+	meanfs = AvgMeter()
+	maes = AvgMeter()
+	to_pil = transforms.ToPILImage()
 
 	with torch.no_grad():
 		batch_idx = 0
 		while batch_idx < batches_per_epoch:
-			for x, target, y, didx, rot, zoom_factor in val_data:
+			for x, targets, y, didx, rot, zoom_factor in val_data:
 				batch_idx += 1
 				if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
 					break
 
 				xc = x.to(device)
-				target = target[key].to(device)
+				target = targets.to(device)
 				yc = [yy.to(device) for yy in y]
 				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+
+				# loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class'])
+				# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
 
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
 
+				# results['loss'] += loss.item()/ld
+				# results['logvars'] = log_vars
 				results['grasploss'] += grasploss.item()/ld
 				results['classloss'] += classloss.item()/ld
 				for ln, l in lossd['losses'].items():
 					if ln not in results['losses']:
 						results['losses'][ln] = 0
 					results['losses'][ln] += l.item()/ld
-
+				
 				q_out, ang_out, w_out = post_process_output(lossd['pred']['pos'], lossd['pred']['cos'],
 															lossd['pred']['sin'], lossd['pred']['width'])
 
@@ -123,25 +137,27 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_
 					results['graspcorrect'] += 1
 				else:
 					results['graspfailed'] += 1
-				
-				#test classification
-				_, class_pred = torch.max(lossd['pred']['class'], 1)
-				pred = class_pred.item()
-				predicted.append(pred)
-				label = target.item()
-				labels.append(label)
-				if pred == label:
-					results['classcorrect'] += 1
-				else:
-					results['classfailed'] += 1
-	
-	results['pred'] = predicted
-	results['label'] = labels
-	
+
+				predsal = np.asarray(to_pil(lossd['pred']['class'].cpu().detach().squeeze()))
+				gt = np.asarray(to_pil(target.cpu().detach().squeeze()))
+
+				ps, rs, mae, meanf = cal_pr_mae_meanf(predsal, gt)
+				for pidx, pdata in enumerate(zip(ps, rs)):
+					p, r = pdata
+					pres[pidx].update(p)
+					recs[pidx].update(r)
+				maes.update(mae)
+				meanfs.update(meanf)
+
+	maxf = cal_maxf([pre.avg for pre in pres], [rec.avg for rec in recs])
+	results['maxf'] = maxf
+	results['meanf'] = meanfs.avg
+	results['mae'] = maes.avg
+
 	return results
 
 
-def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, key='category_id', grasp_weighting=1.0, class_weighting=1.0, vis=False):
+def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, vis=False):
 	"""
 	Run one training epoch
 	:param epoch: Current epoch
@@ -154,6 +170,7 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 	:return:  Average Losses for Epoch
 	"""
 	results = {
+		'loss': 0,
 		'grasploss': 0,
 		'classloss': 0,
 		'losses': {
@@ -165,22 +182,27 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 	batch_idx = 0
 	# Use batches per epoch to make training on different sized datasets (cornell/jacquard) more equivalent.
 	while batch_idx < batches_per_epoch:
-		for x, target, y, _, _, _ in train_data:
+		for x, targets, y, _, _, _ in train_data:
 			batch_idx += 1
 			if batch_idx >= batches_per_epoch:
 				break
 
 			xc = x.to(device)
-			target = target[key].to(device)
+			target = targets.to(device)
 			yc = [yy.to(device) for yy in y]
 			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+
+			# loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class']) #two task loss
+			# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
 
 			grasploss = lossd['loss']['grasp']
 			classloss = lossd['loss']['class']
 
 			if batch_idx % 100 == 0:
+				# print('Epoch: {}, Batch: {}, Kendall Loss {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, loss.item(), grasploss.item(), classloss.item()))
 				print('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
 
+			# results['loss'] += loss.item()
 			results['grasploss'] += grasploss.item()
 			results['classloss'] += classloss.item()
 			for ln, l in lossd['losses'].items():
@@ -196,22 +218,12 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 			elif loss_type == 'combined':
 				grasploss.backward(retain_graph=True)
 				classloss.backward()
+				# loss.backward()
 			else:
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
 
-			# Display the images and add network to tensorboard graph
-			if vis:
-				imgs = []
-				n_img = min(4, x.shape[0])
-				for idx in range(n_img):
-					imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
-						x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
-				gridshow('Display', imgs,
-						 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
-						 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
-				cv2.waitKey(1)
-
+	results['loss'] /= batch_idx
 	results['grasploss'] /= batch_idx
 	results['classloss'] /= batch_idx
 	for l in results['losses']:
@@ -223,6 +235,8 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 def run():
 	args = parse_args()
 
+	print("args called: ", args)
+	
 	# Set-up output directories
 	dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
 	net_desc = '{}_{}'.format(dt, '_'.join(args.description.split()))
@@ -232,35 +246,36 @@ def run():
 		os.makedirs(save_folder)
 	writer = SummaryWriter(os.path.join(args.logdir, net_desc))
 
-	input_channels = 1*args.use_depth + 3*args.use_rgb
-	# transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
-	transformations = None
-
 	# Load Dataset
 	print('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
 
-	print('Training dataset loading')
-	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
-						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle,
-						transform=transformations, seed=args.random_seed)
-	categories = train_dataset.catnms
-	supercategories = train_dataset.supercats
-	print('target classes', categories, 'target_superclasses', supercategories)
-	print('Validation set loading')
-	val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
-						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
-						transform=transformations, seed=args.random_seed)
+	input_channels = 1*args.use_depth + 3*args.use_rgb
+	transformations = transforms.Compose([transforms.ToTensor()])
 	
-	if args.superclass == True:
-		classes = supercategories
-		key = 'supercategory_id'
+	if args.dataset == 'jacquard_sal':
+		print('Training dataset loading')
+		train_dataset = Dataset(args.dataset_path, split=args.split,
+							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+							transform=transformations, seed=args.random_seed)
+		print('Validation set loading')
+		val_dataset = Dataset(args.dataset_path, split=args.split,
+							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
+							transform=transformations, seed=args.random_seed)
 	else:
-		classes = categories
-		key = 'category_id'
-
+		print('Training dataset loading')
+		train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+							transform=transformations, seed=args.random_seed)
+		print('Validation set loading')
+		val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
+							transform=transformations, seed=args.random_seed)
+	
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
 		batch_size=args.batch_size,
@@ -278,39 +293,31 @@ def run():
 
 	# Load the network
 	print('Loading Network...')
-	# net = torch.load(args.network_path)
-	net = torch.load('/media/will/research/mtgrasp/output/models/200403_1837_RGBretrainClass/epoch_28_iou_0.93_class_0.35')
+	mtgcnn = get_network(args.network)
+
+	net = mtgcnn(input_channels=input_channels)
 	device = torch.device("cuda:0")
-	
-	for param in net.parameters():
-		param.requires_grad = False
-
-	for param in net.class_output.parameters():
-		param.requires_grad = True
-
-	for param in net.linearlayers.parameters():
-		param.requires_grad = True
-
-	num_ftrs = net.fc.in_features
-	net.fc = torch.nn.Linear(num_ftrs, len(classes))
-	
 	net = net.to(device)
-	params = [p for p in net.parameters() if p.requires_grad]
-	optimizer = optim.Adam(params)
+
+	# multitask = MultiTaskLoss(2).to(device)
+	# parameters = list(net.parameters()) + list(multitask.parameters())
+	multitask = None
+	parameters = list(net.parameters())
+	optimizer = optim.Adam(parameters)
 	print('Done')
 
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('trainexampleimages', grid)
-	print('training example classes', exampleclasses)
+	grid = torchvision.utils.make_grid(examplelabels, normalize=True)
+	writer.add_image('trainexamplesaliency', grid)
 
 	exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('valexampleimages', grid)
-	print('validation example classes', exampleclasses)
+	grid = torchvision.utils.make_grid(examplelabels, normalize=True)
+	writer.add_image('trainexampleimages', grid)
 
 	# Print model architecture.
 	writer.add_graph(net, exampleimages.to(device))
@@ -323,10 +330,10 @@ def run():
 	f.close()
 
 	best_iou = 0.0
-	best_classification = 0.0
+	best_maxf = 0.0
 	for epoch in range(args.epochs):
 		print('Beginning Epoch {:02d}'.format(epoch))
-		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
+		train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
 		# Log training losses to tensorboard
 		writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
@@ -337,31 +344,30 @@ def run():
 
 		# Run Validation
 		print('Validating...')
-		test_results = validate(net, args.loss_type, device, val_data, args.val_batches, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
+		test_results = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
 		print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
-		print('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
-									test_results['classcorrect']/(test_results['classcorrect']+test_results['classfailed'])))
+		print('Log_vars: ',  test_results['logvars'])
+		print('Maxf: ', test_results['maxf'], ' Meanf: ', test_results['meanf'], ' MAE: ', test_results['mae'])
 
 		# Log validation results to tensorbaord
 		writer.add_scalar('loss/IOU', test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed']), epoch)
-		writer.add_scalar('loss/class_accuracy', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
 		writer.add_scalar('val_loss/val_class_loss', test_results['classloss'], epoch)
 		writer.add_scalar('val_loss/val_grasp_loss', test_results['grasploss'], epoch)
+		writer.add_scalar('val_loss/val_maxf', test_results['maxf'], epoch)
+		writer.add_scalar('val_loss/val_meanf', test_results['meanf'], epoch)
+		writer.add_scalar('val_loss/val_mae', test_results['mae'], epoch)
+
 		for n, l in test_results['losses'].items():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
-		figure = plot_confusion_matrix(test_results['label'], test_results['pred'], classes)
-		writer.add_figure('confusion_matrix', figure, global_step=epoch)
-
 		# Save best performing network
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
-		classification = test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed'])
-		if iou > best_iou or classification > best_classification or epoch == 0 or (epoch % 10) == 0:
-			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_class_%0.2f' % (epoch, iou, classification)))
+		maxf = test_results['maxf']
+		if iou > best_iou or maxf > best_maxf or epoch == 0 or (epoch % 10) == 0:
+			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_maxf_%0.2f' % (epoch, iou, maxf)))
 			best_iou = iou
-			best_classification = classification
-
+			best_maxf = maxf
 		writer.flush()
 	writer.close()
 

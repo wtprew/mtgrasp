@@ -9,6 +9,7 @@ import torch
 import torch.optim as optim
 import torch.utils.data
 import torchvision
+import torchvision.transforms as transforms
 from tensorboard.plugins import projector
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
@@ -195,6 +196,10 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 			elif loss_type == 'combined':
 				grasploss.backward(retain_graph=True)
 				classloss.backward()
+				# if batch_idx % 2 == 0:
+				# 	grasploss.backward(retain_graph=True)
+				# else:
+				# 	classloss.backward()
 			else:
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
@@ -227,7 +232,7 @@ def run():
 
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	# transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
-	transformations = None
+	transformations = transforms.Compose([transforms.ToTensor()])
 
 	print('Training dataset loading')
 	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,

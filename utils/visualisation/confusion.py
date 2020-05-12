@@ -54,6 +54,13 @@ def count_elements(seq, classes) -> dict:
 		hist[name] = hist.get(name, 0) + 1
 	return hist
 
+def count_list(l, classes) -> dict:
+	hist = {}
+	for i in l:
+		name = classes[i]
+		hist[name] = hist.get(name, 0) + 1
+	return hist
+
 def histogram_plot(freq):
 	tick_marks = np.arange(len(freq.keys()))
 

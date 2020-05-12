@@ -19,10 +19,11 @@ from utils.dataset_processing import evaluation
 from utils.data import get_dataset
 from models import get_network
 from models.common import post_process_output
+from models.salgrasp import MultiTaskLoss
 
 logging.basicConfig(level=logging.INFO)
 
-cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
+# cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train GG-CNN')
@@ -55,7 +56,7 @@ def parse_args():
     return args
 
 
-def validate(net, device, val_data, batches_per_epoch):
+def validate(net, device, val_data, mt, batches_per_epoch):
     """
     Run validation.
     :param net: Network
@@ -89,7 +90,8 @@ def validate(net, device, val_data, batches_per_epoch):
                 yc = [yy.to(device) for yy in y]
                 lossd = net.compute_loss(xc, yc)
 
-                loss = lossd['loss']
+                # loss = lossd['loss']
+                loss = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'])
 
                 results['loss'] += loss.item()/ld
                 for ln, l in lossd['losses'].items():
@@ -114,7 +116,7 @@ def validate(net, device, val_data, batches_per_epoch):
     return results
 
 
-def train(epoch, net, device, train_data, optimizer, batches_per_epoch, vis=False):
+def train(epoch, net, device, train_data, mt, optimizer, batches_per_epoch, vis=False):
     """
     Run one training epoch
     :param epoch: Current epoch
@@ -146,7 +148,8 @@ def train(epoch, net, device, train_data, optimizer, batches_per_epoch, vis=Fals
             yc = [yy.to(device) for yy in y]
             lossd = net.compute_loss(xc, yc)
 
-            loss = lossd['loss']
+            # loss = lossd['loss']
+            loss = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'])
 
             if batch_idx % 100 == 0:
                 logging.info('Epoch: {}, Batch: {}, Loss: {:0.4f}'.format(epoch, batch_idx, loss.item()))
@@ -224,7 +227,10 @@ def run():
     net = ggcnn(input_channels=input_channels)
     device = torch.device("cuda:0")
     net = net.to(device)
-    optimizer = optim.Adam(net.parameters())
+
+    multitask = MultiTaskLoss(4).to(device)
+    parameters = list(net.parameters()) + list(multitask.parameters())
+    optimizer = optim.Adam(parameters)
     logging.info('Done')
 
     # Print model architecture.
@@ -238,7 +244,7 @@ def run():
     best_iou = 0.0
     for epoch in range(args.epochs):
         logging.info('Beginning Epoch {:02d}'.format(epoch))
-        train_results = train(epoch, net, device, train_data, optimizer, args.batches_per_epoch, vis=args.vis)
+        train_results = train(epoch, net, device, train_data, multitask, optimizer, args.batches_per_epoch, vis=args.vis)
 
         # Log training losses to tensorboard
         tb.add_scalar('loss/train_loss', train_results['loss'], epoch)
@@ -247,7 +253,7 @@ def run():
 
         # Run Validation
         logging.info('Validating...')
-        test_results = validate(net, device, val_data, args.val_batches)
+        test_results = validate(net, device, val_data, multitask, args.val_batches)
         logging.info('%d/%d = %f' % (test_results['correct'], test_results['correct'] + test_results['failed'],
                                      test_results['correct']/(test_results['correct']+test_results['failed'])))
 

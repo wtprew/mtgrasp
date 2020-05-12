@@ -29,6 +29,14 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		self.file_path = file_path
 		self.coco = COCO(json)
 		self.ids = self.coco.getImgIds()
+		# chosencats = self.coco.getCatIds(catNms=['box','glasses','scissors','shoe','razor','pen','toothbrush','sweet','torch','pez'])
+		# ids = []
+		# for id in chosencats:
+		# 	imgIds = self.coco.getImgIds(catIds=id)
+		# 	for element in imgIds:
+		# 		ids.append(element)
+		# self.ids = sorted(ids)
+
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))
 
@@ -40,6 +48,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		else:
 			self.ids = testids
 
+		# self.cats = self.coco.loadCats(chosencats)
 		self.cats = self.coco.loadCats(self.coco.getCatIds())
 		self.catnms = [cat['name'] for cat in self.cats]
 		self.supercats = sorted(list(set([cat['supercategory'] for cat in self.cats])))
@@ -65,10 +74,18 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		self.targets = self.coco.loadAnns(self.ids)
 		self.transform = transform
 
+		onehot = torch.eye(len(self.cats))
+
 		for i in self.targets:
 			catid = i['category_id']
-			self.objectlist.append(catid-1)
 			self.classlist.append(self.supercats.index(self.coco.loadCats(catid)[0]['supercategory']))
+			
+			# catid = chosencats.index(catid)
+
+			catid = catid - 1
+
+			self.objectlist.append(catid)
+			i['category_id'] = onehot[catid]
 
 		if include_depth is False and include_rgb is False:
 			raise ValueError('At least one of Depth or RGB must be specified.')
@@ -115,7 +132,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		if normalise:
 			rgb_img.normalise()
 			rgb_img.img = rgb_img.img.transpose((2, 0, 1))
-		return rgb_img.img
+			return rgb_img.img
 
 	def __getitem__(self, idx):
 		if self.random_rotate:
@@ -144,7 +161,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 
 		# Load the RGB image
 		if self.include_rgb:
-			rgb_img = self.get_rgb(idx, rot, zoom_factor, normalise=False)
+			rgb_img = self.get_rgb(idx, rot, zoom_factor)
 
 		# Load the grasps
 		graspbbs = self.get_gtbb(idx, rot, zoom_factor)
@@ -163,10 +180,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		elif self.include_depth:
 			x = self.numpy_to_torch(depth_img)
 		elif self.include_rgb:
-			if self.transform is not None:
-				x = self.transform(rgb_img)
-			else:
-				x = self.numpy_to_torch(rgb_img)
+			x = self.numpy_to_torch(rgb_img)
 
 		pos = self.numpy_to_torch(pos_img)
 		cos = self.numpy_to_torch(np.cos(2*ang_img))
@@ -179,9 +193,12 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		target['ignore'] = torch.as_tensor(target['ignore'], dtype=torch.int64)
 		target['image_id'] = torch.as_tensor(target['image_id'], dtype=torch.int64)
 		target['bbox'] = torch.as_tensor(target['bbox'], dtype=torch.float32)
-		target['category_id'] = torch.as_tensor(target['category_id'] - 1, dtype=torch.int64) # rescale to range (0 to C-1)
+		target['category_id'] = torch.as_tensor(target['category_id'], dtype=torch.float32) # rescale to range (0 to C-1)
 		target['id'] = torch.as_tensor(target['id'], dtype=torch.int64)
 		target['supercategory_id'] = torch.as_tensor(supercat, dtype=torch.int64)
+
+		if self.transform is not None:
+			x = self.transform(x)
 
 		return x, target, (pos, cos, sin, width), idx, rot, zoom_factor
 

@@ -84,9 +84,7 @@ class MTGCNNB3(nn.Module):
 		width_output = self.width_output(x)
 
 		y = self.features3(y)
-		import ipdb; ipdb.set_trace()
 		class_output = self.class_output(y)
-		# y = self.batch_norm(F.relu(class_output))
 		y = torch.flatten(class_output, 1)
 		y = self.linearlayers(y)
 		y = self.fc(y)

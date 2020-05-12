@@ -13,11 +13,11 @@ from tensorboard.plugins import projector
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
 
-from models import get_network
+from models.mtgcnnclass import MTGCNN 
 from models.common import post_process_output
-from utils.data import get_dataset
+from utils.data.multi_class import MultiClassDataset
 from utils.dataset_processing import evaluation
-from utils.visualisation.confusion import plot_confusion_matrix
+from utils.visualisation.confusion import plot_confusion_matrix, count_list, histogram_plot
 from utils.visualisation.gridshow import gridshow
 
 # cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
@@ -31,7 +31,6 @@ def parse_args():
 	# Dataset & Data & Training
 	parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard")')
 	parser.add_argument('--dataset-path', type=str, help='Path to dataset')
-	parser.add_argument('--network-path', type=str, help='Path to dataset')
 	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
 	parser.add_argument('--loss_type', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
 	parser.add_argument('--grasp_weight', type=float, default=1.0, help='Loss weight to modify the grasp weight')
@@ -40,7 +39,7 @@ def parse_args():
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
 	parser.add_argument('--superclass', action='store_true', help='use superclasses for training')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
-	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
+	parser.add_argument('--random-seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--num-workers', type=int, default=8, help='Dataset workers')
 
@@ -59,7 +58,7 @@ def parse_args():
 	return args
 
 
-def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_id', grasp_weighting=1.0, class_weighting=1.0):
+def validate(net, loss_type, device, val_data, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0):
 	"""
 	Run validation.
 	:param net: Network
@@ -75,30 +74,40 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_
 		'graspfailed': 0,
 		'classcorrect': 0,
 		'classfailed': 0,
+		'materialcorrect': 0,
+		'materialfailed': 0,
+		'shapecorrect': 0,
+		'shapefailed': 0,
 		'grasploss': 0,
 		'classloss': 0,
 		'losses': {
 		},
-		'pred': [],
-		'label': [],
+		'classpred': [],
+		'classlabel': [],
+
 	}
 
 	ld = len(val_data)
-	predicted = []
-	labels = []
+	classpredicted = []
+	materialpredicted = []
+	shapepredicted = []
+	class_labels = []
+	material_labels = []
+	shape_labels = []
 
 	with torch.no_grad():
 		batch_idx = 0
 		while batch_idx < batches_per_epoch:
-			for x, target, y, didx, rot, zoom_factor in val_data:
+			for x, targets, y, didx, rot, zoom_factor in val_data:
 				batch_idx += 1
 				if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
 					break
 
 				xc = x.to(device)
-				target = target[key].to(device)
+				for key in targets.keys():
+					targets[key] = targets[key].to(device)
 				yc = [yy.to(device) for yy in y]
-				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+				lossd = net.compute_loss(xc, targets, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
@@ -126,22 +135,50 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_
 				
 				#test classification
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
-				pred = class_pred.item()
-				predicted.append(pred)
-				label = target.item()
-				labels.append(label)
-				if pred == label:
+				_, material_pred = torch.max(lossd['pred']['material'], 1)
+				_, shape_pred = torch.max(lossd['pred']['shape'], 1)
+
+				classpred = class_pred.item()
+				classpredicted.append(classpred)
+				classlabel = targets['class_id'].item()
+				class_labels.append(classlabel)
+
+				materialpred = material_pred.item()
+				materialpredicted.append(materialpred)
+				materiallabel = targets['material_id'].item()
+				material_labels.append(materiallabel)
+
+				shapepred = shape_pred.item()
+				shapepredicted.append(shapepred)
+				shapelabel = targets['shape_id'].item()
+				shape_labels.append(shapelabel)
+
+				if classpred == classlabel:
 					results['classcorrect'] += 1
 				else:
 					results['classfailed'] += 1
+				
+				if materialpred == materiallabel:
+					results['materialcorrect'] += 1
+				else:
+					results['materialfailed'] += 1
+				
+				if shapepred == shapelabel:
+					results['shapecorrect'] += 1
+				else:
+					results['shapefailed'] += 1
 	
-	results['pred'] = predicted
-	results['label'] = labels
+	results['classpred'] = classpredicted
+	results['classlabel'] = class_labels
+	results['materialpred'] = materialpredicted
+	results['materiallabel'] = material_labels
+	results['shapepred'] = shapepredicted
+	results['shapelabel'] = shape_labels
 	
 	return results
 
 
-def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, key='category_id', grasp_weighting=1.0, class_weighting=1.0, vis=False):
+def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, vis=False):
 	"""
 	Run one training epoch
 	:param epoch: Current epoch
@@ -165,15 +202,16 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 	batch_idx = 0
 	# Use batches per epoch to make training on different sized datasets (cornell/jacquard) more equivalent.
 	while batch_idx < batches_per_epoch:
-		for x, target, y, _, _, _ in train_data:
+		for x, targets, y, _, _, _ in train_data:
 			batch_idx += 1
 			if batch_idx >= batches_per_epoch:
 				break
 
 			xc = x.to(device)
-			target = target[key].to(device)
+			for key in targets.keys():
+				targets[key] = targets[key].to(device)
 			yc = [yy.to(device) for yy in y]
-			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+			lossd = net.compute_loss(xc, targets, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
 			grasploss = lossd['loss']['grasp']
 			classloss = lossd['loss']['class']
@@ -200,18 +238,6 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
 
-			# Display the images and add network to tensorboard graph
-			if vis:
-				imgs = []
-				n_img = min(4, x.shape[0])
-				for idx in range(n_img):
-					imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
-						x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
-				gridshow('Display', imgs,
-						 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
-						 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
-				cv2.waitKey(1)
-
 	results['grasploss'] /= batch_idx
 	results['classloss'] /= batch_idx
 	for l in results['losses']:
@@ -223,6 +249,8 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 def run():
 	args = parse_args()
 
+	print("args called: ", args)
+	
 	# Set-up output directories
 	dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
 	net_desc = '{}_{}'.format(dt, '_'.join(args.description.split()))
@@ -232,34 +260,31 @@ def run():
 		os.makedirs(save_folder)
 	writer = SummaryWriter(os.path.join(args.logdir, net_desc))
 
+	# Load Dataset
+	Dataset = MultiClassDataset
+
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	# transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
 	transformations = None
 
-	# Load Dataset
-	print('Loading {} Dataset...'.format(args.dataset.title()))
-	Dataset = get_dataset(args.dataset)
-
 	print('Training dataset loading')
-	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
-						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle,
+	train_dataset = Dataset(args.dataset_path,
+						'annotations/coco.json', 'annotations/materials.json', 'annotations/shape.json',
+						split=args.split, random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
 						transform=transformations, seed=args.random_seed)
-	categories = train_dataset.catnms
-	supercategories = train_dataset.supercats
-	print('target classes', categories, 'target_superclasses', supercategories)
+	objects = train_dataset.objectcatnms
+	classes = train_dataset.classcats
+	materials = train_dataset.materialcatnms
+	textures = train_dataset.texturecats
+	shapes = train_dataset.shapecatnms
+	print('target objects: ', objects, '\ntarget classes: ', classes, '\ntarget materials: ', materials, '\ntarget textures: ', textures, '\ntarget shapes: ', shapes)
 	print('Validation set loading')
-	val_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
-						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+	val_dataset = Dataset(args.dataset_path,
+						'annotations/coco.json', 'annotations/materials.json', 'annotations/shape.json',
+						split=args.split, random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 						include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
 						transform=transformations, seed=args.random_seed)
-	
-	if args.superclass == True:
-		classes = supercategories
-		key = 'supercategory_id'
-	else:
-		classes = categories
-		key = 'category_id'
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -278,39 +303,50 @@ def run():
 
 	# Load the network
 	print('Loading Network...')
-	# net = torch.load(args.network_path)
-	net = torch.load('/media/will/research/mtgrasp/output/models/200403_1837_RGBretrainClass/epoch_28_iou_0.93_class_0.35')
+	# mtgcnn = MTGCNN()
+
+	net = MTGCNN(input_channels=input_channels, classes=len(classes), shape_classes=len(shapes), material_classes=len(materials))
+	# net = torch.load('/media/will/research/mtgrasp/output/models/200305_1521_class_rgb_mc_branch_7030/epoch_29_iou_0.84_class_0.49')
 	device = torch.device("cuda:0")
-	
-	for param in net.parameters():
-		param.requires_grad = False
-
-	for param in net.class_output.parameters():
-		param.requires_grad = True
-
-	for param in net.linearlayers.parameters():
-		param.requires_grad = True
-
-	num_ftrs = net.fc.in_features
-	net.fc = torch.nn.Linear(num_ftrs, len(classes))
-	
 	net = net.to(device)
-	params = [p for p in net.parameters() if p.requires_grad]
-	optimizer = optim.Adam(params)
+	optimizer = optim.Adam(net.parameters())
 	print('Done')
+
+	# Display frequency of classes
+	object_targets = count_list(train_dataset.objectlist, objects) 
+	class_targets = count_list(train_dataset.classlist, classes)
+	material_targets = count_list(train_dataset.materiallist, materials)
+	texture_targets = count_list(train_dataset.texturelist, textures)
+	shape_targets = count_list(train_dataset.shapelist, shapes)
+
+	object_hist = histogram_plot(object_targets)
+	class_hist = histogram_plot(class_targets)
+	material_hist = histogram_plot(material_targets)
+	texture_hist = histogram_plot(texture_targets)
+	shape_hist = histogram_plot(shape_targets)
+
+	writer.add_figure('classfreq/objects', object_hist, global_step=0)
+	writer.add_figure('classfreq/class', class_hist, global_step=0)
+	writer.add_figure('classfreq/material', material_hist, global_step=0)
+	writer.add_figure('classfreq/texture', texture_hist, global_step=0)
+	writer.add_figure('classfreq/shape', shape_hist, global_step=0)
 
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
+	exampleclasses = [classes[lab] for lab in examplelabels['class_id']]
+	examplematerials = [materials[lab] for lab in examplelabels['material_id']]
+	exampleshapes = [shapes[lab] for lab in examplelabels['shape_id']]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('trainexampleimages', grid)
-	print('training example classes', exampleclasses)
+	print('training example classes', exampleclasses, examplematerials, exampleshapes)
 
 	exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
+	exampleclasses = [classes[lab] for lab in examplelabels['class_id']]
+	examplematerials = [materials[lab] for lab in examplelabels['material_id']]
+	exampleshapes = [shapes[lab] for lab in examplelabels['shape_id']]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('valexampleimages', grid)
-	print('validation example classes', exampleclasses)
+	print('validation example classes', exampleclasses, examplematerials, exampleshapes)
 
 	# Print model architecture.
 	writer.add_graph(net, exampleimages.to(device))
@@ -326,7 +362,7 @@ def run():
 	best_classification = 0.0
 	for epoch in range(args.epochs):
 		print('Beginning Epoch {:02d}'.format(epoch))
-		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
+		train_results = train(epoch, args.loss_type, net, device, train_data, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
 		# Log training losses to tensorboard
 		writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
@@ -337,22 +373,32 @@ def run():
 
 		# Run Validation
 		print('Validating...')
-		test_results = validate(net, args.loss_type, device, val_data, args.val_batches, key=key, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
+		test_results = validate(net, args.loss_type, device, val_data, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
 		print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
 		print('Classification results %d/%d = %f' % (test_results['classcorrect'], test_results['classcorrect'] + test_results['classfailed'],
 									test_results['classcorrect']/(test_results['classcorrect']+test_results['classfailed'])))
+		print('Material results %d/%d = %f' % (test_results['materialcorrect'], test_results['materialcorrect'] + test_results['materialfailed'],
+									test_results['materialcorrect']/(test_results['materialcorrect']+test_results['materialfailed'])))
+		print('Shape results %d/%d = %f' % (test_results['shapecorrect'], test_results['shapecorrect'] + test_results['shapefailed'],
+									test_results['shapecorrect']/(test_results['shapecorrect']+test_results['shapefailed'])))
 
 		# Log validation results to tensorbaord
 		writer.add_scalar('loss/IOU', test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed']), epoch)
 		writer.add_scalar('loss/class_accuracy', test_results['classcorrect'] / (test_results['classcorrect'] + test_results['classfailed']), epoch)
+		writer.add_scalar('loss/material_accuracy', test_results['materialcorrect'] / (test_results['materialcorrect'] + test_results['materialfailed']), epoch)
+		writer.add_scalar('loss/shape_accuracy', test_results['shapecorrect'] / (test_results['shapecorrect'] + test_results['shapefailed']), epoch)
 		writer.add_scalar('val_loss/val_class_loss', test_results['classloss'], epoch)
 		writer.add_scalar('val_loss/val_grasp_loss', test_results['grasploss'], epoch)
 		for n, l in test_results['losses'].items():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
-		figure = plot_confusion_matrix(test_results['label'], test_results['pred'], classes)
-		writer.add_figure('confusion_matrix', figure, global_step=epoch)
+		classplot = plot_confusion_matrix(test_results['classlabel'], test_results['classpred'], classes)
+		materialplot = plot_confusion_matrix(test_results['materiallabel'], test_results['materialpred'], materials)
+		shapeplot = plot_confusion_matrix(test_results['shapelabel'], test_results['shapepred'], shapes)
+		writer.add_figure('confusion_matrix/class', classplot, global_step=epoch)
+		writer.add_figure('confusion_matrix/material', materialplot, global_step=epoch)
+		writer.add_figure('confusion_matrix/shape', shapeplot, global_step=epoch)
 
 		# Save best performing network
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])

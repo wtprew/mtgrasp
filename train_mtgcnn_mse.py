@@ -15,9 +15,9 @@ from torchsummary import summary
 
 from models import get_network
 from models.common import post_process_output
-from utils.data import get_dataset
+from utils.data.cornell_class_vector import CornellCocoDataset
 from utils.dataset_processing import evaluation
-from utils.visualisation.confusion import plot_confusion_matrix
+from utils.visualisation.confusion import plot_confusion_matrix, count_list, histogram_plot
 from utils.visualisation.gridshow import gridshow
 
 # cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
@@ -31,7 +31,6 @@ def parse_args():
 	# Dataset & Data & Training
 	parser.add_argument('--dataset', type=str, help='Dataset Name ("cornell" or "jaquard")')
 	parser.add_argument('--dataset-path', type=str, help='Path to dataset')
-	parser.add_argument('--network-path', type=str, help='Path to dataset')
 	parser.add_argument('--json', type=str, help='Path to image classifications', default='annotations/coco.json')
 	parser.add_argument('--loss_type', type=str, default='grasp', help='Type of loss function to use ("grasp", "class", "combined")')
 	parser.add_argument('--grasp_weight', type=float, default=1.0, help='Loss weight to modify the grasp weight')
@@ -40,7 +39,7 @@ def parse_args():
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for training (0/1)')
 	parser.add_argument('--superclass', action='store_true', help='use superclasses for training')
 	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
-	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
+	parser.add_argument('--random-seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--num-workers', type=int, default=8, help='Dataset workers')
 
@@ -90,13 +89,13 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_
 	with torch.no_grad():
 		batch_idx = 0
 		while batch_idx < batches_per_epoch:
-			for x, target, y, didx, rot, zoom_factor in val_data:
+			for x, targets, y, didx, rot, zoom_factor in val_data:
 				batch_idx += 1
 				if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
 					break
 
 				xc = x.to(device)
-				target = target[key].to(device)
+				target = targets[key].to(device)
 				yc = [yy.to(device) for yy in y]
 				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
@@ -128,7 +127,8 @@ def validate(net, loss_type, device, val_data, batches_per_epoch, key='category_
 				_, class_pred = torch.max(lossd['pred']['class'], 1)
 				pred = class_pred.item()
 				predicted.append(pred)
-				label = target.item()
+				_, label = torch.max(target, 1)
+				label = label.item()
 				labels.append(label)
 				if pred == label:
 					results['classcorrect'] += 1
@@ -165,13 +165,13 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 	batch_idx = 0
 	# Use batches per epoch to make training on different sized datasets (cornell/jacquard) more equivalent.
 	while batch_idx < batches_per_epoch:
-		for x, target, y, _, _, _ in train_data:
+		for x, targets, y, _, _, _ in train_data:
 			batch_idx += 1
 			if batch_idx >= batches_per_epoch:
 				break
 
 			xc = x.to(device)
-			target = target[key].to(device)
+			target = targets[key].to(device)
 			yc = [yy.to(device) for yy in y]
 			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
@@ -200,18 +200,6 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
 
-			# Display the images and add network to tensorboard graph
-			if vis:
-				imgs = []
-				n_img = min(4, x.shape[0])
-				for idx in range(n_img):
-					imgs.extend([x[idx,].numpy().squeeze()] + [yi[idx,].numpy().squeeze() for yi in y] + [
-						x[idx,].numpy().squeeze()] + [pc[idx,].detach().cpu().numpy().squeeze() for pc in lossd['pred'].values()])
-				gridshow('Display', imgs,
-						 [(xc.min().item(), xc.max().item()), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0)] * 2 * n_img,
-						 [cv2.COLORMAP_BONE] * 10 * n_img, 10)
-				cv2.waitKey(1)
-
 	results['grasploss'] /= batch_idx
 	results['classloss'] /= batch_idx
 	for l in results['losses']:
@@ -223,6 +211,8 @@ def train(epoch, loss_type, net, device, train_data, optimizer, batches_per_epoc
 def run():
 	args = parse_args()
 
+	print("args called: ", args)
+	
 	# Set-up output directories
 	dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
 	net_desc = '{}_{}'.format(dt, '_'.join(args.description.split()))
@@ -232,18 +222,18 @@ def run():
 		os.makedirs(save_folder)
 	writer = SummaryWriter(os.path.join(args.logdir, net_desc))
 
+	# Load Dataset
+	# print('Loading {} Dataset...'.format(args.dataset.title()))
+	Dataset = CornellCocoDataset
+
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	# transformations = torchvision.transforms.Compose([torchvision.transforms.Normalize(tuple([0.5])*input_channels, tuple([0.5])*input_channels)])
 	transformations = None
 
-	# Load Dataset
-	print('Loading {} Dataset...'.format(args.dataset.title()))
-	Dataset = get_dataset(args.dataset)
-
 	print('Training dataset loading')
 	train_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle,
+						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
 						transform=transformations, seed=args.random_seed)
 	categories = train_dataset.catnms
 	supercategories = train_dataset.supercats
@@ -278,39 +268,36 @@ def run():
 
 	# Load the network
 	print('Loading Network...')
-	# net = torch.load(args.network_path)
-	net = torch.load('/media/will/research/mtgrasp/output/models/200403_1837_RGBretrainClass/epoch_28_iou_0.93_class_0.35')
+	mtgcnn = get_network(args.network)
+
+	net = mtgcnn(input_channels=input_channels, num_classes=len(classes))
+	# net = torch.load('/media/will/research/mtgrasp/output/models/200319_1052_class_rgb_mse_branch_hard/epoch_28_iou_0.90_class_0.19')
 	device = torch.device("cuda:0")
-	
-	for param in net.parameters():
-		param.requires_grad = False
-
-	for param in net.class_output.parameters():
-		param.requires_grad = True
-
-	for param in net.linearlayers.parameters():
-		param.requires_grad = True
-
-	num_ftrs = net.fc.in_features
-	net.fc = torch.nn.Linear(num_ftrs, len(classes))
-	
 	net = net.to(device)
-	params = [p for p in net.parameters() if p.requires_grad]
-	optimizer = optim.Adam(params)
+	optimizer = optim.Adam(net.parameters())
 	print('Done')
+
+	# Display frequency of classes
+	train_targets = count_list(train_dataset.objectlist, categories)
+	test_targets = count_list(val_dataset.objectlist, categories)
+
+	train_hist = histogram_plot(train_targets)
+	test_hist = histogram_plot(test_targets)
+	writer.add_figure('classfreq/training', train_hist, global_step=0)
+	writer.add_figure('classfreq/testing', test_hist, global_step=0)
 
 	# display a set of example images
 	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
+	# exampleclasses = [classes[lab] for lab in examplelabels[key]]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('trainexampleimages', grid)
-	print('training example classes', exampleclasses)
+	# print('training example classes', exampleclasses)
 
 	exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
+	# exampleclasses = [classes[lab] for lab in examplelabels[key]]
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('valexampleimages', grid)
-	print('validation example classes', exampleclasses)
+	# print('validation example classes', exampleclasses)
 
 	# Print model architecture.
 	writer.add_graph(net, exampleimages.to(device))

@@ -13,13 +13,13 @@ from utils.dataset_processing import grasp, image
 
 from sklearn.model_selection import train_test_split
 
-class CornellCocoDataset(torch.utils.data.Dataset):
+class MultiClassDataset(torch.utils.data.Dataset):
 	"""
 	Dataset wrapper for the Cornell dataset and coco annotations.
 	"""
-	def __init__(self, file_path, json, split=0.9, output_size=300,
-				 random_rotate=False, random_zoom=False, include_rgb=True, include_depth=False,
-				 train=True, shuffle=True, transform=None, seed=42):
+	def __init__(self, file_path, objectjson, materialjson, shapejson, split=0.9, output_size=300, 
+				random_rotate=False, random_zoom=False, include_rgb=True, include_depth=False,
+				train=True, shuffle=True, transform=None, seed=42):
 		"""
 		:param file_path: Cornell Dataset directory.
 		:param json: path to coco annotation file
@@ -27,11 +27,13 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		"""
 
 		self.file_path = file_path
-		self.coco = COCO(json)
-		self.ids = self.coco.getImgIds()
+		self.objectcoco = COCO(objectjson)
+		self.ids = self.objectcoco.getImgIds()
+		self.materialcoco = COCO(materialjson)
+		self.shapecoco = COCO(shapejson)
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))
-
+		
 		# self.ids = self.ids[int(len(self.ids)*start):int(len(self.ids)*end)]
 		trainids, testids = train_test_split(self.ids, train_size=split, shuffle=True, random_state=seed)
 
@@ -40,19 +42,29 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		else:
 			self.ids = testids
 
-		self.cats = self.coco.loadCats(self.coco.getCatIds())
-		self.catnms = [cat['name'] for cat in self.cats]
-		self.supercats = sorted(list(set([cat['supercategory'] for cat in self.cats])))
+		self.objectcats = self.objectcoco.loadCats(self.objectcoco.getCatIds())
+		self.objectcatnms = [cat['name'] for cat in self.objectcats]
+		self.classcats = sorted(list(set([cat['supercategory'] for cat in self.objectcats])))
+
+		self.materialcats = self.materialcoco.loadCats(self.materialcoco.getCatIds())
+		self.materialcatnms = [cat['name'] for cat in self.materialcats]
+		self.texturecats = sorted(list(set([cat['supercategory'] for cat in self.materialcats])))
+
+		self.shapecats = self.shapecoco.loadCats(self.shapecoco.getCatIds())
+		self.shapecatnms = [cat['name'] for cat in self.shapecats]
 
 		rgbf = []
-		for imgFile in self.coco.loadImgs(self.ids):
+		for imgFile in self.objectcoco.loadImgs(self.ids):
 			rgbf.append(os.path.join(file_path, imgFile['file_name']))
 
 		depthf = [f.replace('r.png', 'd.tiff') for f in rgbf]
 		graspf = [f.replace('d.tiff', 'cpos.txt') for f in depthf]
-
+		
 		self.objectlist = []
 		self.classlist = []
+		self.materiallist = []
+		self.texturelist = []
+		self.shapelist = []
 
 		self.output_size = output_size
 		self.random_rotate = random_rotate
@@ -62,13 +74,25 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		self.grasp_files = graspf
 		self.include_rgb = include_rgb
 		self.include_depth = include_depth
-		self.targets = self.coco.loadAnns(self.ids)
+		self.objecttargets = self.objectcoco.loadAnns(self.ids)
+		self.classtargets = self.objectcoco
+		self.materialtargets = self.materialcoco.loadAnns(self.ids)
+		self.shapetargets = self.shapecoco.loadAnns(self.ids)
 		self.transform = transform
 
-		for i in self.targets:
+		for i in self.objecttargets:
 			catid = i['category_id']
 			self.objectlist.append(catid-1)
-			self.classlist.append(self.supercats.index(self.coco.loadCats(catid)[0]['supercategory']))
+			self.classlist.append(self.classcats.index(self.objectcoco.loadCats(catid)[0]['supercategory']))
+
+		for i in self.materialtargets:
+			catid = i['category_id']
+			self.materiallist.append(catid-1)
+			self.texturelist.append(self.texturecats.index(self.materialcoco.loadCats(catid)[0]['supercategory']))
+
+		for i in self.shapetargets:
+			catid = i['category_id']
+			self.shapelist.append(catid-1)
 
 		if include_depth is False and include_rgb is False:
 			raise ValueError('At least one of Depth or RGB must be specified.')
@@ -129,14 +153,13 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		else:
 			zoom_factor = 1.0
 
-		# coco = self.coco
 		# img_id = self.ids[idx]
-		# ann_ids = coco.getAnnIds(imgIds=img_id)
-		# target = coco.loadAnns(ann_ids)[0]
-		# cat = coco.loadCats(target['category_id'])[0]
-		# supercat = self.supercats.index(cat['supercategory'])
-		target = self.targets[idx]
-		supercat = self.classlist[idx]
+		# ann_ids = objectcoco.getAnnIds(imgIds=img_id)
+		target = self.objecttargets[idx]
+		target['class_id'] = self.classlist[idx]
+		target['material_id'] =  self.materiallist[idx]
+		target['texture_id'] = self.texturelist[idx]
+		target['shape_id'] = self.shapelist[idx]
 
 		# Load the depth image
 		if self.include_depth:
@@ -144,7 +167,7 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 
 		# Load the RGB image
 		if self.include_rgb:
-			rgb_img = self.get_rgb(idx, rot, zoom_factor, normalise=False)
+			rgb_img = self.get_rgb(idx, rot, zoom_factor)
 
 		# Load the grasps
 		graspbbs = self.get_gtbb(idx, rot, zoom_factor)
@@ -163,25 +186,28 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		elif self.include_depth:
 			x = self.numpy_to_torch(depth_img)
 		elif self.include_rgb:
-			if self.transform is not None:
-				x = self.transform(rgb_img)
-			else:
-				x = self.numpy_to_torch(rgb_img)
+			x = self.numpy_to_torch(rgb_img)
 
 		pos = self.numpy_to_torch(pos_img)
 		cos = self.numpy_to_torch(np.cos(2*ang_img))
 		sin = self.numpy_to_torch(np.sin(2*ang_img))
 		width = self.numpy_to_torch(width_img)
-
-		target['segmentation'] = torch.as_tensor(target['segmentation'], dtype=torch.float32)
+		
+		target['segmentation'] = torch.as_tensor(target['segmentation'], dtype=torch.float32)		
 		target['area'] = torch.as_tensor(target['area'], dtype=torch.float32)
 		target['iscrowd'] = torch.as_tensor(target['iscrowd'], dtype=torch.int64)
 		target['ignore'] = torch.as_tensor(target['ignore'], dtype=torch.int64)
 		target['image_id'] = torch.as_tensor(target['image_id'], dtype=torch.int64)
 		target['bbox'] = torch.as_tensor(target['bbox'], dtype=torch.float32)
 		target['category_id'] = torch.as_tensor(target['category_id'] - 1, dtype=torch.int64) # rescale to range (0 to C-1)
+		target['class_id'] = torch.as_tensor(target['class_id'], dtype=torch.int64)
+		target['material_id'] = torch.as_tensor(target['material_id'], dtype=torch.int64)
+		target['texture_id'] = torch.as_tensor(target['texture_id'], dtype=torch.int64)
+		target['shape_id'] = torch.as_tensor(target['shape_id'], dtype=torch.int64)
 		target['id'] = torch.as_tensor(target['id'], dtype=torch.int64)
-		target['supercategory_id'] = torch.as_tensor(supercat, dtype=torch.int64)
+
+		if self.transform is not None:
+			x = self.transform(x)
 
 		return x, target, (pos, cos, sin, width), idx, rot, zoom_factor
 
