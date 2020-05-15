@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 
-
 def gridshow(name, imgs, scales, cmaps, width, border=10):
     """
     Display images in a grid.

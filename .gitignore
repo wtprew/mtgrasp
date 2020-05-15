@@ -6,3 +6,5 @@ output
 tensorboard
 MNIST
 train_mnist.py
+ncc
+*.ipynb

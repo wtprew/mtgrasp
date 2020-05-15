@@ -47,8 +47,6 @@ class SGCNN(nn.Module):
 			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
 				nn.init.xavier_uniform_(m.weight, gain=1)
 
-		self.cel = CEL()
-
 	def forward(self, x):
 		#shared network
 		x = F.relu(self.conv1(x))
@@ -88,7 +86,6 @@ class SGCNN(nn.Module):
 		width_loss = F.mse_loss(width_pred, y_width)
 
 		class_loss = F.mse_loss(class_pred, y_class)
-		# class_loss = self.cel(class_pred, y_class)
 
 		return {
 			'loss': {

@@ -20,6 +20,7 @@ from models.common import post_process_output
 from models.salgrasp import MultiTaskLoss
 from utils.data import get_dataset
 from utils.dataset_processing import evaluation
+from utils.dataset_processing.grasp import visualise_output
 from utils.visualisation.confusion import plot_confusion_matrix, count_elements, histogram_plot
 from utils.visualisation.gridshow import gridshow
 from utils.metric import cal_pr_mae_meanf, cal_maxf, AvgMeter
@@ -62,7 +63,7 @@ def parse_args():
 	return args
 
 
-def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0):
+def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, title=None):
 	"""
 	Run validation.
 	:param net: Network
@@ -107,16 +108,19 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 				xc = x.to(device)
 				target = targets.to(device)
 				yc = [yy.to(device) for yy in y]
+				if batch_idx == 1:
+					fig = visualise_output(xc[0], target[0], net, title=str(title))
 				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
-				# loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class'])
-				# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
+				if loss_type == 'kendall':
+					loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class'])
+					# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
+					results['loss'] += loss.item()/ld
+					results['logvars'] = log_vars
 
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
 
-				# results['loss'] += loss.item()/ld
-				# results['logvars'] = log_vars
 				results['grasploss'] += grasploss.item()/ld
 				results['classloss'] += classloss.item()/ld
 				for ln, l in lossd['losses'].items():
@@ -154,7 +158,7 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 	results['meanf'] = meanfs.avg
 	results['mae'] = maes.avg
 
-	return results
+	return results, fig
 
 
 def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, vis=False):
@@ -192,17 +196,19 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 			yc = [yy.to(device) for yy in y]
 			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
-			# loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class']) #two task loss
-			# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
+			if loss_type == 'kendall':
+				loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class']) #two task loss
+				# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
 
 			grasploss = lossd['loss']['grasp']
 			classloss = lossd['loss']['class']
 
 			if batch_idx % 100 == 0:
-				# print('Epoch: {}, Batch: {}, Kendall Loss {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, loss.item(), grasploss.item(), classloss.item()))
-				print('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
+				if loss_type == 'kendall':
+					print('Epoch: {}, Batch: {}, Kendall Loss {:0.4f}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, loss.item(), grasploss.item(), classloss.item()))
+				else:
+					print('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
 
-			# results['loss'] += loss.item()
 			results['grasploss'] += grasploss.item()
 			results['classloss'] += classloss.item()
 			for ln, l in lossd['losses'].items():
@@ -218,7 +224,9 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 			elif loss_type == 'combined':
 				grasploss.backward(retain_graph=True)
 				classloss.backward()
-				# loss.backward()
+			elif loss_type =='kendall':
+				results['loss'] += loss.item()
+				loss.backward()
 			else:
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
@@ -236,7 +244,7 @@ def run():
 	args = parse_args()
 
 	print("args called: ", args)
-	
+
 	# Set-up output directories
 	dt = datetime.datetime.now().strftime('%y%m%d_%H%M')
 	net_desc = '{}_{}'.format(dt, '_'.join(args.description.split()))
@@ -299,10 +307,12 @@ def run():
 	device = torch.device("cuda:0")
 	net = net.to(device)
 
-	# multitask = MultiTaskLoss(2).to(device)
-	# parameters = list(net.parameters()) + list(multitask.parameters())
-	multitask = None
-	parameters = list(net.parameters())
+	if args.loss_type == 'kendall':
+		multitask = MultiTaskLoss(2).to(device)
+		parameters = list(net.parameters()) + list(multitask.parameters())
+	else:
+		multitask = None
+		parameters = list(net.parameters())
 	optimizer = optim.Adam(parameters)
 	print('Done')
 
@@ -329,8 +339,10 @@ def run():
 	sys.stdout = sys.__stdout__
 	f.close()
 
-	best_iou = 0.0
-	best_maxf = 0.0
+	best_iou = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+	best_maxf = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+	best_meanf = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+	best_mae = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
 	for epoch in range(args.epochs):
 		print('Beginning Epoch {:02d}'.format(epoch))
 		train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
@@ -344,31 +356,55 @@ def run():
 
 		# Run Validation
 		print('Validating...')
-		test_results = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight)
+		test_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, title=args.description)
 		print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
 		print('Log_vars: ',  test_results['logvars'])
-		print('Maxf: ', test_results['maxf'], ' Meanf: ', test_results['meanf'], ' MAE: ', test_results['mae'])
+		
+		maxf = test_results['maxf']
+		meanf = test_results['meanf']
+		mae = test_results['mae']
+		
+		print('Maxf: ', maxf, ' Meanf: ', meanf, ' MAE: ', mae)
 
 		# Log validation results to tensorbaord
 		writer.add_scalar('loss/IOU', test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed']), epoch)
 		writer.add_scalar('val_loss/val_class_loss', test_results['classloss'], epoch)
 		writer.add_scalar('val_loss/val_grasp_loss', test_results['grasploss'], epoch)
-		writer.add_scalar('val_loss/val_maxf', test_results['maxf'], epoch)
-		writer.add_scalar('val_loss/val_meanf', test_results['meanf'], epoch)
-		writer.add_scalar('val_loss/val_mae', test_results['mae'], epoch)
+		writer.add_scalar('val_loss/val_maxf', maxf, epoch)
+		writer.add_scalar('val_loss/val_meanf',meanf, epoch)
+		writer.add_scalar('val_loss/val_mae', mae, epoch)
 
 		for n, l in test_results['losses'].items():
 			writer.add_scalar('val_loss/' + n, l, epoch)
 
 		# Save best performing network
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
-		maxf = test_results['maxf']
-		if iou > best_iou or maxf > best_maxf or epoch == 0 or (epoch % 10) == 0:
-			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_maxf_%0.2f' % (epoch, iou, maxf)))
-			best_iou = iou
-			best_maxf = maxf
+		# if iou > best_iou or maxf > best_maxf or epoch == 0 or (epoch % 10) == 0:
+		torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_maxf_%0.2f_meanf_%0.2f_mae_%0.2f' % (epoch, iou, maxf, meanf, mae)))
+		if iou > best_iou:		
+			best_iou = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+		if maxf > best_maxf:
+			best_maxf = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+		if meanf > best_meanf:
+			best_meanf = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+		if mae > best_mae:
+			best_mae = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
 		writer.flush()
+
+		fig.savefig(os.path.join(save_folder, str(epoch)))
+	for i in best_iou:
+		print('Best IOU score')
+		print(i, best_iou[i])
+	for i in best_maxf:
+		print('Best MaxF score')
+		print(i, best_maxf[i])
+	for i in best_meanf:
+		print('Best MeanF score')
+		print(i, best_meanf[i])
+	for i in best_mae:
+		print('Best MAE score')
+		print(i, best_mae[i])
 	writer.close()
 
 
