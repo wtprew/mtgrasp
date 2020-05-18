@@ -382,17 +382,18 @@ def run():
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
 		# if iou > best_iou or maxf > best_maxf or epoch == 0 or (epoch % 10) == 0:
 		torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_maxf_%0.2f_meanf_%0.2f_mae_%0.2f' % (epoch, iou, maxf, meanf, mae)))
-		if iou > best_iou:		
+		if iou > best_iou['iou']:		
 			best_iou = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
-		if maxf > best_maxf:
+		if maxf > best_maxf['maxf']:
 			best_maxf = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
-		if meanf > best_meanf:
+		if meanf > best_meanf['meanf']:
 			best_meanf = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
-		if mae > best_mae:
+		if mae > best_mae['mae']:
 			best_mae = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
 		writer.flush()
 
 		fig.savefig(os.path.join(save_folder, str(epoch)))
+
 	for i in best_iou:
 		print('Best IOU score')
 		print(i, best_iou[i])
