@@ -5,6 +5,7 @@ import os
 import sys
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim as optim
@@ -108,8 +109,6 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 				xc = x.to(device)
 				target = targets.to(device)
 				yc = [yy.to(device) for yy in y]
-				if batch_idx == 1:
-					fig = visualise_output(xc[0], target[0], net, title=str(title))
 				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
 				if loss_type == 'kendall':
@@ -141,6 +140,9 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 					results['graspcorrect'] += 1
 				else:
 					results['graspfailed'] += 1
+				
+				if batch_idx == 1:
+					fig = visualise_output(xc[0], target[0], net, grasp_success=s, title=str(title))
 
 				predsal = np.asarray(to_pil(lossd['pred']['class'].cpu().detach().squeeze()))
 				gt = np.asarray(to_pil(target.cpu().detach().squeeze()))

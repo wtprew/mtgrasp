@@ -26,7 +26,7 @@ def post_process_output(q_img, cos_img, sin_img, width_img):
 
 	return q_img, ang_img, width_img
 	
-def visualise_output(i, sal, net, title=None):
+def visualise_output(i, sal, net, grasp_success=0, title=None):
 	fig, f_axes = plt.subplots(ncols=2, nrows=3, constrained_layout=True)
 
 	if title is not None:
@@ -56,7 +56,10 @@ def visualise_output(i, sal, net, title=None):
 	for g in gs:
 		g.plot(f_axes[1][0])
 	f_axes[1][0].imshow(image)
-	f_axes[1][0].set_title('grasp')
+	if grasp_success == False:
+		f_axes[1][0].set_title('Failed grasp')
+	else:
+		f_axes[1][0].set_title('Successful grasp')
 	f_axes[1][0].axis('off')
 
 	saliency = transforms.ToPILImage()(sal_out.detach().squeeze().cpu())
