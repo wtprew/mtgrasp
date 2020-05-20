@@ -394,7 +394,7 @@ def run():
 			best_mae = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
 		writer.flush()
 
-		fig.savefig(os.path.join(save_folder, str(epoch)))
+		fig.savefig(os.path.join(save_folder, str(epoch)+'_'+str(iou)))
 		plt.close(fig)
 
 	for i in best_iou:
