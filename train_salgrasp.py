@@ -116,7 +116,7 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 					loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class'])
 					# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
 					results['loss'] += loss.item()/ld
-					results['logvars'] = log_vars
+					results['logvars'] = [n/ld for n in log_vars]
 
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
@@ -327,7 +327,7 @@ def run():
 	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
 	writer.add_image('valexampleimages', grid)
 	grid = torchvision.utils.make_grid(examplelabels, normalize=True)
-	writer.add_image('trainexampleimages', grid)
+	writer.add_image('valexamplesaliency', grid)
 
 	# Print model architecture.
 	writer.add_graph(net, exampleimages.to(device))
@@ -393,6 +393,7 @@ def run():
 		writer.flush()
 
 		fig.savefig(os.path.join(save_folder, str(epoch)))
+		plt.close(fig)
 
 	for i in best_iou:
 		print('Best IOU score')
