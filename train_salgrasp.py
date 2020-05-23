@@ -111,14 +111,16 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 				yc = [yy.to(device) for yy in y]
 				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
 
-				if loss_type == 'kendall':
-					loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class'])
-					# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
-					results['loss'] += loss.item()/ld
-					results['logvars'] = [n/ld for n in log_vars]
-
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
+
+				if loss_type == 'kendall':
+					loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class'])
+					results['loss'] += loss.item()/ld
+					results['logvars'] = [n/ld for n in log_vars]
+				else:
+					loss = grasploss + classloss
+					results['loss'] += loss.item()/ld
 
 				results['grasploss'] += grasploss.item()/ld
 				results['classloss'] += classloss.item()/ld
@@ -200,16 +202,9 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 
 			if loss_type == 'kendall':
 				loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class']) #two task loss
-				# loss, log_vars = mt(lossd['losses']['p_loss'], lossd['losses']['cos_loss'], lossd['losses']['sin_loss'], lossd['losses']['width_loss'], lossd['losses']['class_loss']) #all output loss
 
 			grasploss = lossd['loss']['grasp']
 			classloss = lossd['loss']['class']
-
-			if batch_idx % 100 == 0:
-				if loss_type == 'kendall':
-					print('Epoch: {}, Batch: {}, Kendall Loss {:0.4f}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, loss.item(), grasploss.item(), classloss.item()))
-				else:
-					print('Epoch: {}, Batch: {}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, grasploss.item(), classloss.item()))
 
 			results['grasploss'] += grasploss.item()
 			results['classloss'] += classloss.item()
@@ -224,14 +219,20 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 			elif loss_type == 'class':
 				classloss.backward()
 			elif loss_type == 'combined':
-				grasploss.backward(retain_graph=True)
-				classloss.backward()
+				# grasploss.backward(retain_graph=True)
+				# classloss.backward()
+				loss = grasploss + classloss
+				results['loss'] += loss.item()
+				loss.backward()
 			elif loss_type =='kendall':
 				results['loss'] += loss.item()
 				loss.backward()
 			else:
 				raise TypeError('--loss_type must be either "grasp", "class", or "combined"')
 			optimizer.step()
+
+			if batch_idx % 100 == 0:
+				print('Epoch: {}, Batch: {}, Combined Loss {:0.4f}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, loss.item(), grasploss.item(), classloss.item()))
 
 	results['loss'] /= batch_idx
 	results['grasploss'] /= batch_idx
@@ -350,6 +351,7 @@ def run():
 		train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
 		# Log training losses to tensorboard
+		writer.add_scalar('loss/loss', train_results['loss'], epoch)
 		writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
 		writer.add_scalar('loss/class_loss', train_results['classloss'], epoch)
 
@@ -394,7 +396,7 @@ def run():
 			best_mae = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
 		writer.flush()
 
-		fig.savefig(os.path.join(save_folder, str(epoch)+'_'+str(iou)))
+		fig.savefig(os.path.join(save_folder, str(epoch)))
 		plt.close(fig)
 
 	for i in best_iou:
