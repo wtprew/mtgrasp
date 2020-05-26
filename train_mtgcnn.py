@@ -239,6 +239,7 @@ def run():
 						random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 						include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
 						transform=transformations, seed=args.random_seed)
+	import ipdb; ipdb.set_trace()
 	categories = train_dataset.catnms
 	supercategories = train_dataset.supercats
 	print('target classes', categories, 'target_superclasses', supercategories)

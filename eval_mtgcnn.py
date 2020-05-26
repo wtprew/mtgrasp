@@ -24,7 +24,7 @@ def parse_args():
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for evaluation (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for evaluation (0/1)')
 	parser.add_argument('--augment', action='store_true', help='Whether data augmentation should be applied')
-	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
+	parser.add_argument('--split', type=float, default=0.8, help='Fraction of data for training (remainder is validation)')
 	parser.add_argument('--random_seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--ds-rotate', type=float, default=0.0,
