@@ -15,23 +15,13 @@ from sklearn.model_selection import train_test_split
 
 import torchvision.transforms.functional as TF
 
-class MyRotationTransform:
-    """Rotate by one of the given angles."""
-
-    def __init__(self, angles):
-        self.angles = angles
-
-    def __call__(self, x, t, pos, ang, width):
-        angle = random.choice(self.angles)
-        return TF.rotate(x, angle), TF.rotate(t, angle), TF.rotate(pos, angle), TF.rotate(ang, angle), TF.rotate(width, angle)
-
-class CornellSalDataset(torch.utils.data.Dataset):
+class CornellKDataset(torch.utils.data.Dataset):
 	"""
 	Dataset wrapper for the Cornell dataset and coco annotations.
 	"""
-	def __init__(self, file_path, json, split=0.9, output_size=300,
+	def __init__(self, file_path, json, output_size=300,
 				 random_rotate=False, random_zoom=False, include_rgb=True, include_depth=False,
-				 train=True, shuffle=True, transform=None, seed=42):
+				 train=True, shuffle=True, transform=None, train_ids=None, test_ids=None):
 		"""
 		:param file_path: Cornell Dataset directory.
 		:param json: path to coco annotation file
@@ -40,16 +30,14 @@ class CornellSalDataset(torch.utils.data.Dataset):
 
 		self.file_path = file_path
 		self.coco = COCO(json)
-		self.ids = self.coco.getImgIds()
+
+		if train:
+			self.ids = train_ids + 1
+		else:
+			self.ids = test_ids + 1
+
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))
-
-		trainids, testids = train_test_split(self.ids, train_size=split, shuffle=True, random_state=seed)
-
-		if train == True:
-			self.ids = trainids
-		else:
-			self.ids = testids
 
 		rgbf = []
 		for imgFile in self.coco.loadImgs(self.ids):

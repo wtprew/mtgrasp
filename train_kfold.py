@@ -19,7 +19,10 @@ from torchsummary import summary
 from models import get_network
 from models.common import post_process_output
 from models.salgrasp import MultiTaskLoss
-from utils.data import get_dataset
+from utils.data.jacquard_sal import JacquardSalDataset
+from utils.data.cornell_sal import CornellSalDataset
+from utils.data.jacquard_kfold import JacquardKDataset
+from utils.data.cornell_kfold import CornellKDataset
 from utils.dataset_processing import evaluation
 from utils.dataset_processing.grasp import visualise_output
 from utils.visualisation.confusion import plot_confusion_matrix, count_elements, histogram_plot
@@ -220,8 +223,6 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 			elif loss_type == 'class':
 				classloss.backward()
 			elif loss_type == 'combined':
-				# grasploss.backward(retain_graph=True)
-				# classloss.backward()
 				loss = grasploss + classloss
 				results['loss'] += loss.item()
 				loss.backward()
@@ -260,24 +261,11 @@ def run():
 
 	# Load Dataset
 	print('Loading {} Dataset...'.format(args.dataset.title()))
-	Dataset = get_dataset(args.dataset)
+	# Dataset = get_dataset(args.dataset)
 
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	transformations = transforms.Compose([transforms.ToTensor()])
 	
-	if args.dataset == 'jacquard_sal':
-		print('Training dataset loading')
-		dataset = Dataset(args.dataset_path, split=args.split,
-							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
-							transform=transformations, seed=args.random_seed)
-	else:
-		print('Training dataset loading')
-		dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
-							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
-							transform=transformations, seed=args.random_seed)
-
 	# Load the network
 	print('Loading Network...')
 	mtgcnn = get_network(args.network)
@@ -294,22 +282,6 @@ def run():
 		parameters = list(net.parameters())
 	optimizer = optim.Adam(parameters)
 	print('Done')
-
-	# display a set of example images
-	# exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
-	# grid = torchvision.utils.make_grid(exampleimages, normalize=True)
-	# writer.add_image('trainexampleimages', grid)
-	# grid = torchvision.utils.make_grid(examplelabels, normalize=True)
-	# writer.add_image('trainexamplesaliency', grid)
-
-	# exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
-	# grid = torchvision.utils.make_grid(exampleimages, normalize=True)
-	# writer.add_image('valexampleimages', grid)
-	# grid = torchvision.utils.make_grid(examplelabels, normalize=True)
-	# writer.add_image('valexamplesaliency', grid)
-
-	# Print model architecture.
-	# writer.add_graph(net, exampleimages.to(device))
 	
 	summary(net, (input_channels, 300, 300))
 	f = open(os.path.join(save_folder, 'arch.txt'), 'w')
@@ -323,13 +295,34 @@ def run():
 	best_meanf = {'fold': 0, 'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
 	best_mae = {'fold': 0, 'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
 	
-	kf = KFold(n_splits=5)
+	kf = KFold(n_splits=5, shuffle=True)
+
+	if args.dataset == 'jacquard':
+		dataset = JacquardSalDataset(args.dataset_path)
+	else:
+		dataset = CornellSalDataset(args.dataset_path, json=args.json)
 
 	for i, (train_index, test_index) in enumerate(kf.split(dataset)):
-		
-		print('Fold: ', i)
-		train_dataset = torch.utils.data.Subset(dataset, train_index)
-		val_dataset = torch.utils.data.Subset(dataset, test_index)
+		if args.dataset == 'jacquard':
+			print('Training dataset loading')
+			train_dataset = JacquardKDataset(args.dataset_path,
+								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+								include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+								transform=transformations, train_ids=train_index)
+			val_dataset = JacquardKDataset(args.dataset_path,
+								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+								include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
+								transform=transformations, test_ids=test_index)
+		else:
+			print('Training dataset loading')
+			train_dataset = CornellKDataset(args.dataset_path, json=args.json,
+								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+								include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+								transform=transformations, train_ids=train_index)
+			val_dataset = CornellKDataset(args.dataset_path, json=args.json,
+								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+								include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
+								transform=transformations, test_ids=test_index)
 
 		train_data = torch.utils.data.DataLoader(
 			train_dataset,
@@ -345,6 +338,8 @@ def run():
 			num_workers=args.num_workers
 		)
 		print('Done')
+
+		print('Fold: ', i)
 		for epoch in range(args.epochs):
 			print('Beginning Epoch {:02d}'.format(epoch))
 			train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
@@ -384,7 +379,7 @@ def run():
 			# Save best performing network
 			iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
 			# if iou > best_iou or maxf > best_maxf or epoch == 0 or (epoch % 10) == 0:
-			torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_maxf_%0.2f_meanf_%0.2f_mae_%0.2f' % (epoch, iou, maxf, meanf, mae)))
+			torch.save(net, os.path.join(save_folder, 'fold%02d_epoch_%02d_iou_%0.2f_maxf_%0.2f_meanf_%0.2f_mae_%0.2f' % (i, epoch, iou, maxf, meanf, mae)))
 			if iou > best_iou['iou']:		
 				best_iou = {'fold': i, 'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
 			if maxf > best_maxf['maxf']:
