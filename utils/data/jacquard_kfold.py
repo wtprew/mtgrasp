@@ -33,10 +33,12 @@ class JacquardKDataset(torch.utils.data.Dataset):
 		l = len(graspf)
 		if l == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(file_path))
-
+		
 		if train == True:
+			train_ids = np.array(train_ids)
 			graspf = [graspf[i] for i in train_ids]
 		else:
+			test_ids = np.array(test_ids)
 			graspf = [graspf[i] for i in test_ids]
 
 		depthf = [f.replace('grasps.txt', 'perfect_depth.tiff') for f in graspf]

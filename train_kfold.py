@@ -52,6 +52,7 @@ def parse_args():
 	parser.add_argument('--random-seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--num-workers', type=int, default=8, help='Dataset workers')
+	parser.add_argument('--ksplit', type=int, default=0)
 
 	parser.add_argument('--batch-size', type=int, default=8, help='Batch size')
 	parser.add_argument('--epochs', type=int, default=30, help='Training epochs')
@@ -263,6 +264,12 @@ def run():
 	print('Loading {} Dataset...'.format(args.dataset.title()))
 	# Dataset = get_dataset(args.dataset)
 
+	import json
+	print(f'Loading {args.ksplit} split...')
+	f = json.load(open('k_split_indices.txt', 'rb'))
+	train_indices = f[str(args.ksplit)]['train']
+	val_indices = f[str(args.ksplit)]['val']
+
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	transformations = transforms.Compose([transforms.ToTensor()])
 	
@@ -290,108 +297,141 @@ def run():
 	sys.stdout = sys.__stdout__
 	f.close()
 
-	best_iou = {'fold': 0, 'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
-	best_maxf = {'fold': 0, 'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
-	best_meanf = {'fold': 0, 'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
-	best_mae = {'fold': 0, 'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
-	
-	kf = KFold(n_splits=5, shuffle=True)
+	best_iou = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+	best_maxf = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+	best_meanf = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
+	best_mae = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
 
 	if args.dataset == 'jacquard':
-		dataset = JacquardSalDataset(args.dataset_path)
+		print('Training dataset loading')
+		train_dataset = JacquardKDataset(args.dataset_path,
+							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+							transform=transformations, train_ids=train_indices)
+		val_dataset = JacquardKDataset(args.dataset_path,
+							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
+							transform=transformations, test_ids=val_indices)
 	else:
-		dataset = CornellSalDataset(args.dataset_path, json=args.json)
+		print('Training dataset loading')
+		train_dataset = CornellKDataset(args.dataset_path, json=args.json,
+							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
+							transform=transformations, train_ids=train_indices)
+		val_dataset = CornellKDataset(args.dataset_path, json=args.json,
+							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
+							transform=transformations, test_ids=val_indices)
 
-	for i, (train_index, test_index) in enumerate(kf.split(dataset)):
-		if args.dataset == 'jacquard':
-			print('Training dataset loading')
-			train_dataset = JacquardKDataset(args.dataset_path,
-								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-								include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
-								transform=transformations, train_ids=train_index)
-			val_dataset = JacquardKDataset(args.dataset_path,
-								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-								include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
-								transform=transformations, test_ids=test_index)
-		else:
-			print('Training dataset loading')
-			train_dataset = CornellKDataset(args.dataset_path, json=args.json,
-								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-								include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
-								transform=transformations, train_ids=train_index)
-			val_dataset = CornellKDataset(args.dataset_path, json=args.json,
-								random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-								include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
-								transform=transformations, test_ids=test_index)
+	train_data = torch.utils.data.DataLoader(
+		train_dataset,
+		batch_size=args.batch_size,
+		shuffle=True,
+		num_workers=args.num_workers
+	)
 
-		train_data = torch.utils.data.DataLoader(
-			train_dataset,
-			batch_size=args.batch_size,
-			shuffle=True,
-			num_workers=args.num_workers
-		)
+	test_data = torch.utils.data.DataLoader(
+		train_dataset,
+		batch_size=1,
+		shuffle=True,
+		num_workers=args.num_workers
+	)
 
-		val_data = torch.utils.data.DataLoader(
-			val_dataset,
-			batch_size=1,
-			shuffle=False,
-			num_workers=args.num_workers
-		)
-		print('Done')
+	val_data = torch.utils.data.DataLoader(
+		val_dataset,
+		batch_size=1,
+		shuffle=False,
+		num_workers=args.num_workers
+	)
+	print('Done')
+	
+	test_loss = []
+	val_loss = []
 
-		print('Fold: ', i)
-		for epoch in range(args.epochs):
-			print('Beginning Epoch {:02d}'.format(epoch))
-			train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
+	for epoch in range(args.epochs):
+		print('Beginning Epoch {:02d}'.format(epoch))
+		train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
 
-			# Log training losses to tensorboard
-			writer.add_scalar('loss/loss', train_results['loss'], epoch)
-			writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
-			writer.add_scalar('loss/class_loss', train_results['classloss'], epoch)
+		# Log training losses to tensorboard
+		writer.add_scalar('loss/loss', train_results['loss'], epoch)
+		writer.add_scalar('loss/grasp_loss', train_results['grasploss'], epoch)
+		writer.add_scalar('loss/class_loss', train_results['classloss'], epoch)
 
-			for n, l in train_results['losses'].items():
-				writer.add_scalar('train_loss/' + n, l, epoch)
+		for n, l in train_results['losses'].items():
+			writer.add_scalar('train_loss/' + n, l, epoch)
 
-			# Run Validation
-			print('Validating...')
-			test_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, title=args.description)
-			print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
-										test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
-			print('Log_vars: ',  test_results['logvars'])
-			
-			maxf = test_results['maxf']
-			meanf = test_results['meanf']
-			mae = test_results['mae']
-			
-			print('Maxf: ', maxf, ' Meanf: ', meanf, ' MAE: ', mae)
+		# Run Validation
+		print('Testing...')
+		test_results, fig = validate(net, args.loss_type, device, test_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, title=args.description)
+		print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
+									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
+		print('Log_vars: ',  test_results['logvars'])
+		
+		maxf = test_results['maxf']
+		meanf = test_results['meanf']
+		mae = test_results['mae']
+		
+		print('Maxf: ', maxf, ' Meanf: ', meanf, ' MAE: ', mae)
 
-			# Log validation results to tensorbaord
-			writer.add_scalar('loss/IOU', test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed']), epoch)
-			writer.add_scalar('val_loss/val_class_loss', test_results['classloss'], epoch)
-			writer.add_scalar('val_loss/val_grasp_loss', test_results['grasploss'], epoch)
-			writer.add_scalar('val_loss/val_maxf', maxf, epoch)
-			writer.add_scalar('val_loss/val_meanf',meanf, epoch)
-			writer.add_scalar('val_loss/val_mae', mae, epoch)
+		# Log validation results to tensorbaord
+		writer.add_scalar('test_loss/IOU', test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed']), epoch)
+		writer.add_scalar('test_loss/test_class_loss', test_results['classloss'], epoch)
+		writer.add_scalar('test_loss/test_grasp_loss', test_results['grasploss'], epoch)
+		writer.add_scalar('test_loss/test_loss', test_results['loss'], epoch)
+		writer.add_scalar('test_loss/test_maxf', maxf, epoch)
+		writer.add_scalar('test_loss/test_meanf',meanf, epoch)
+		writer.add_scalar('test_loss/test_mae', mae, epoch)
 
-			for n, l in test_results['losses'].items():
-				writer.add_scalar('val_loss/' + n, l, epoch)
+		print('Validation results')
+		val_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, title=args.description)
 
-			# Save best performing network
-			iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
-			# if iou > best_iou or maxf > best_maxf or epoch == 0 or (epoch % 10) == 0:
-			torch.save(net, os.path.join(save_folder, 'fold%02d_epoch_%02d_iou_%0.2f_maxf_%0.2f_meanf_%0.2f_mae_%0.2f' % (i, epoch, iou, maxf, meanf, mae)))
-			if iou > best_iou['iou']:		
-				best_iou = {'fold': i, 'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
-			if maxf > best_maxf['maxf']:
-				best_maxf = {'fold': i, 'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
-			if meanf > best_meanf['meanf']:
-				best_meanf = {'fold': i, 'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
-			if mae > best_mae['mae']:
-				best_mae = {'fold': i, 'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
-			writer.flush()
+		print('IoU results %d/%d = %f' % (val_results['graspcorrect'], val_results['graspcorrect'] + val_results['graspfailed'],
+									val_results['graspcorrect']/(val_results['graspcorrect']+val_results['graspfailed'])))
+		print('Log_vars: ',  val_results['logvars'])
+		maxf = val_results['maxf']
+		meanf = val_results['meanf']
+		mae = val_results['mae']
+		print('Maxf: ', maxf, ' Meanf: ', meanf, ' MAE: ', mae)
 
-			fig.savefig(os.path.join(save_folder, 'Fold'+str(i)+'Epoch'+str(epoch)))
-			plt.close(fig)
+		# Log validation results to tensorbaord
+		writer.add_scalar('loss/IOU', val_results['graspcorrect'] / (val_results['graspcorrect'] + val_results['graspfailed']), epoch)
+		writer.add_scalar('val_loss/test_class_loss', val_results['classloss'], epoch)
+		writer.add_scalar('val_loss/test_grasp_loss', val_results['grasploss'], epoch)
+		writer.add_scalar('val_loss/test_loss', val_results['loss'], epoch)
+		writer.add_scalar('val_loss/test_maxf', maxf, epoch)
+		writer.add_scalar('val_loss/test_meanf',meanf, epoch)
+		writer.add_scalar('val_loss/test_mae', mae, epoch)
+
+		test_loss.append(test_results['loss'])
+		val_loss.append(val_results['loss'])
+
+		for n, l in test_results['losses'].items():
+			writer.add_scalar('val_loss/' + n, l, epoch)
+
+		# Save best performing network
+		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
+		# if iou > best_iou or maxf > best_maxf or epoch == 0 or (epoch % 10) == 0:
+		torch.save(net, os.path.join(save_folder, 'epoch_%02d_iou_%0.2f_maxf_%0.2f_meanf_%0.2f_mae_%0.2f' % (epoch, iou, maxf, meanf, mae)))
+		if iou > best_iou['iou']:		
+			best_iou = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
+		if maxf > best_maxf['maxf']:
+			best_maxf = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
+		if meanf > best_meanf['meanf']:
+			best_meanf = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
+		if mae > best_mae['mae']:
+			best_mae = {'epoch': epoch, 'iou': iou, 'maxf': maxf, 'meanf': meanf, 'mae': mae}
+		writer.flush()
+
+		fig.savefig(os.path.join(save_folder, 'Epoch'+str(epoch)))
+		plt.close(fig)
+
+	plt.plot(test_loss, label='Test loss')
+	plt.plot(val_loss, label='Val loss')
+	plt.xlabel('epoch')
+	plt.ylabel('loss')
+	plt.legend()
+	plt.savefig(os.path.join(save_folder, 'Loss'))
+	plt.close()
 
 	for i in best_iou:
 		print('Best IOU score')
