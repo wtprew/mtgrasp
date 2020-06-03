@@ -425,6 +425,7 @@ def run():
 		fig.savefig(os.path.join(save_folder, 'Epoch'+str(epoch)))
 		plt.close(fig)
 
+	plt.figure(figsize=(20,20))
 	plt.plot(test_loss, label='Test loss')
 	plt.plot(val_loss, label='Val loss')
 	plt.xlabel('epoch')
