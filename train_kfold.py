@@ -384,6 +384,7 @@ def run():
 		writer.add_scalar('test_loss/test_maxf', maxf, epoch)
 		writer.add_scalar('test_loss/test_meanf',meanf, epoch)
 		writer.add_scalar('test_loss/test_mae', mae, epoch)
+		writer.add_scalar('loss/test_loss', test_results['loss'], epoch)
 
 		print('Validation results')
 		val_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, title=args.description)
@@ -404,6 +405,7 @@ def run():
 		writer.add_scalar('val_loss/test_maxf', maxf, epoch)
 		writer.add_scalar('val_loss/test_meanf',meanf, epoch)
 		writer.add_scalar('val_loss/test_mae', mae, epoch)
+		writer.add_scalar('loss/val_loss', val_results['loss'], epoch)
 
 		test_loss.append(test_results['loss'])
 		val_loss.append(val_results['loss'])

@@ -21,9 +21,12 @@ def get_network(network_name):
     elif network_name == 'mtgcnnb3':
         from .mtgcnnbranch3 import MTGCNNB3
         return MTGCNNB3
-    elif network_name == 'salgrasp':
+    elif network_name == 'sg':
         from .salgrasp import SGCNN
         return SGCNN
+    elif network_name == 'sg2':
+        from .salgrasp2 import SGCNN2
+        return SGCNN2
     elif network_name == 'cel':
         from .salgraspcel import SGCNN
         return SGCNN

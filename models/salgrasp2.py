@@ -20,76 +20,86 @@ class MultiTaskLoss(nn.Module):
 		var = self.get_var()                                                                                                                                                 
 		return torch.sum(var * losses + self.log_var), self.log_var.data.tolist()
 
-class SGCNN(nn.Module):
+class SGCNN2(nn.Module):
 	"""
 	extension of the GG-CNN with a classification branch
 	"""
-	def __init__(self, input_channels=1):
+	def __init__(self, input_channels=1, filter_sizes=None, l3_k_size=5, dilations=None):
 		super().__init__()
-        if filter_sizes is None:
-            filter_sizes = [16,  # First set of convs
-                            16,  # Second set of convs
-                            32,  # Dilated convs
-                            16]  # Transpose Convs
+		if filter_sizes is None:
+			filter_sizes = [16,  # First set of convs
+							16,  # Second set of convs
+							32,  # Dilated convs
+							16]  # Transpose Convs
 
-        if dilations is None:
-            dilations = [2, 4]
+		if dilations is None:
+			dilations = [2, 4]
 
-        self.features = nn.Sequential(
-            # 4 conv layers.
-            nn.Conv2d(input_channels, filter_sizes[0], kernel_size=11, stride=1, padding=5, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(filter_sizes[0], filter_sizes[0], kernel_size=5, stride=1, padding=2, bias=True),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+		self.features = nn.Sequential(
+			# 4 conv layers.
+			nn.Conv2d(input_channels, filter_sizes[0], kernel_size=11, stride=1, padding=5, bias=True),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(filter_sizes[0], filter_sizes[0], kernel_size=5, stride=1, padding=2, bias=True),
+			nn.ReLU(inplace=True),
+			nn.MaxPool2d(kernel_size=2, stride=2),
 
-            nn.Conv2d(filter_sizes[0], filter_sizes[1], kernel_size=5, stride=1, padding=2, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(filter_sizes[1], filter_sizes[1], kernel_size=5, stride=1, padding=2, bias=True),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+			nn.Conv2d(filter_sizes[0], filter_sizes[1], kernel_size=5, stride=1, padding=2, bias=True),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(filter_sizes[1], filter_sizes[1], kernel_size=5, stride=1, padding=2, bias=True),
+			nn.ReLU(inplace=True),
+			nn.MaxPool2d(kernel_size=2, stride=2)
+		)
 
-            # Dilated convolutions.
-            nn.Conv2d(filter_sizes[1], filter_sizes[2], kernel_size=l3_k_size, dilation=dilations[0], stride=1, padding=(l3_k_size//2 * dilations[0]), bias=True),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(filter_sizes[2], filter_sizes[2], kernel_size=l3_k_size, dilation=dilations[1], stride=1, padding=(l3_k_size//2 * dilations[1]), bias=True),
-            nn.ReLU(inplace=True),
+		self.grasps = nn.Sequential(
+			# Dilated convolutions.
+			nn.Conv2d(filter_sizes[1], filter_sizes[2], kernel_size=l3_k_size, dilation=dilations[0], stride=1, padding=(l3_k_size//2 * dilations[0]), bias=True),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(filter_sizes[2], filter_sizes[2], kernel_size=l3_k_size, dilation=dilations[1], stride=1, padding=(l3_k_size//2 * dilations[1]), bias=True),
+			nn.ReLU(inplace=True),
 
-            # Output layers
-            nn.ConvTranspose2d(filter_sizes[2], filter_sizes[3], 3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(filter_sizes[3], filter_sizes[3], 3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(inplace=True),
+			# Output layers
+			nn.ConvTranspose2d(filter_sizes[2], filter_sizes[3], 3, stride=2, padding=1, output_padding=1),
+			nn.ReLU(inplace=True),
+			nn.ConvTranspose2d(filter_sizes[3], filter_sizes[3], 3, stride=2, padding=1, output_padding=1),
+			nn.ReLU(inplace=True)
+		)
+		self.saliency = nn.Sequential(
+			# Dilated convolutions.
+			nn.Conv2d(filter_sizes[1], filter_sizes[2], kernel_size=l3_k_size, dilation=dilations[0], stride=1, padding=(l3_k_size//2 * dilations[0]), bias=True),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(filter_sizes[2], filter_sizes[2], kernel_size=l3_k_size, dilation=dilations[1], stride=1, padding=(l3_k_size//2 * dilations[1]), bias=True),
+			nn.ReLU(inplace=True),
 
-        )
+			# Output layers
+			nn.ConvTranspose2d(filter_sizes[2], filter_sizes[3], 3, stride=2, padding=1, output_padding=1),
+			nn.ReLU(inplace=True),
+			nn.ConvTranspose2d(filter_sizes[3], filter_sizes[3], 3, stride=2, padding=1, output_padding=1),
+		)
 
-        self.pos_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
-        self.cos_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
-        self.sin_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
-        self.width_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
+		self.pos_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
+		self.cos_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
+		self.sin_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
+		self.width_output = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
 
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.xavier_uniform_(m.weight, gain=1)
+		self.class_out = nn.Conv2d(filter_sizes[3], 1, kernel_size=1)
+
+		for m in self.modules():
+			if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+				nn.init.xavier_uniform_(m.weight, gain=1)
 				
 	def forward(self, x):
 		#shared network
-		x = F.relu(self.conv1(x))
-		x = F.relu(self.conv2(x))
-		y = F.relu(self.conv3(x))
-		x = F.relu(self.convt1(y))
-		x = F.relu(self.convt2(x))
-		x = F.relu(self.convt3(x))
+		x = self.features(x)
 
-		pos_output = self.pos_output(x)
-		cos_output = self.cos_output(x)
-		sin_output = self.sin_output(x)
-		width_output = self.width_output(x)
+		y = self.grasps(x)
+		z = self.saliency(x)
 
-		z = F.relu(self.convt4(y))
-		z = F.relu(self.convt5(z))
-		z = F.relu(self.convt6(z))
-		class_out = self.class_conv(z)
+		pos_output = self.pos_output(y)
+		cos_output = self.cos_output(y)
+		sin_output = self.sin_output(y)
+		width_output = self.width_output(y)
+
+		class_out = self.class_out(z)
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
