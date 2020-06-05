@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .CEL import CEL
 
 filter_sizes = [32, 16, 8, 8, 16, 32]
 kernel_sizes = [9, 5, 3, 3, 5, 9]
 strides = [3, 2, 2, 2, 2, 3]
 
-class MultiTaskLoss(nn.Module):                                                                                                                                              
+#Kendall loss implementation
+class MultiTaskLoss(nn.Module):                                                                                                                                       
 	def __init__(self, num_tasks):                                                                                                                                           
 		super(MultiTaskLoss, self).__init__()                                                                                                                                
 		self.log_var = torch.nn.Parameter(data=torch.zeros((num_tasks,)), requires_grad=True)                                                                                
@@ -68,7 +68,7 @@ class SGCNN(nn.Module):
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
-	def compute_loss(self, xc, target, yc, grasp_weight=1.0, class_weight=1.0):
+	def compute_loss(self, xc, target, yc):
 		"""
 		xc: prediction from network
 		yc: ground truth in same order as xc
@@ -89,8 +89,8 @@ class SGCNN(nn.Module):
 
 		return {
 			'loss': {
-				'grasp': grasp_weight*(p_loss + cos_loss + sin_loss + width_loss),
-				'class': class_weight*(class_loss)
+				'grasp': p_loss + cos_loss + sin_loss + width_loss,
+				'class': class_loss
 			},
 			'losses': {
 				'p_loss': p_loss,

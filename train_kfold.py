@@ -69,7 +69,7 @@ def parse_args():
 	return args
 
 
-def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, title=None):
+def validate(net, loss_type, device, val_data, mt, batches_per_epoch, title=None):
 	"""
 	Run validation.
 	:param net: Network
@@ -114,7 +114,7 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 				xc = x.to(device)
 				target = targets.to(device)
 				yc = [yy.to(device) for yy in y]
-				lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+				lossd = net.compute_loss(xc, target, yc)
 
 				grasploss = lossd['loss']['grasp']
 				classloss = lossd['loss']['class']
@@ -170,10 +170,11 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, grasp_weig
 	return results, fig
 
 
-def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_epoch, grasp_weighting=1.0, class_weighting=1.0, vis=False):
+def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_epoch, vis=False):
 	"""
 	Run one training epoch
 	:param epoch: Current epoch
+	:param loss_type: Which type of loss to backpropagate through the network ("grasp", "class", "combined", "Kendall")
 	:param net: Network
 	:param device: Torch device
 	:param train_data: Training Dataset
@@ -203,7 +204,7 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 			xc = x.to(device)
 			target = targets.to(device)
 			yc = [yy.to(device) for yy in y]
-			lossd = net.compute_loss(xc, target, yc, grasp_weight=grasp_weighting, class_weight=class_weighting)
+			lossd = net.compute_loss(xc, target, yc)
 
 			if loss_type == 'kendall':
 				loss, log_vars = mt(lossd['loss']['grasp'], lossd['loss']['class']) #two task loss
@@ -236,6 +237,8 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 
 			if batch_idx % 100 == 0:
 				print('Epoch: {}, Batch: {}, Combined Loss {:0.4f}, Grasp Loss: {:0.4f}, Class Loss {:0.4f}'.format(epoch, batch_idx, loss.item(), grasploss.item(), classloss.item()))
+				if loss_type == 'kendall':
+					print('Log Variables: ', log_vars)
 
 	results['loss'] /= batch_idx
 	results['grasploss'] /= batch_idx
@@ -306,22 +309,22 @@ def run():
 		print('Training dataset loading')
 		train_dataset = JacquardKDataset(args.dataset_path,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
-							transform=transformations, train_ids=train_indices)
+							include_rgb=args.use_rgb, shuffle=args.shuffle, 
+							transform=transformations, ids=train_indices)
 		val_dataset = JacquardKDataset(args.dataset_path,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
-							transform=transformations, test_ids=val_indices)
+							include_rgb=args.use_rgb, shuffle=args.shuffle, 
+							transform=transformations, ids=val_indices)
 	else:
 		print('Training dataset loading')
 		train_dataset = CornellKDataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=True, shuffle=args.shuffle, 
-							transform=transformations, train_ids=train_indices)
+							include_rgb=args.use_rgb, shuffle=args.shuffle, 
+							transform=transformations, ids=train_indices)
 		val_dataset = CornellKDataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle, 
-							transform=transformations, test_ids=val_indices)
+							include_rgb=args.use_rgb, shuffle=args.shuffle, 
+							transform=transformations, ids=val_indices)
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -350,7 +353,7 @@ def run():
 
 	for epoch in range(args.epochs):
 		print('Beginning Epoch {:02d}'.format(epoch))
-		train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, vis=args.vis)
+		train_results = train(epoch, args.loss_type, net, device, train_data, multitask, optimizer, args.batches_per_epoch, vis=args.vis)
 
 		# Log training losses to tensorboard
 		writer.add_scalar('loss/loss', train_results['loss'], epoch)
@@ -362,7 +365,7 @@ def run():
 
 		# Run Validation
 		print('Testing...')
-		test_results, fig = validate(net, args.loss_type, device, test_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, title=args.description)
+		test_results, fig = validate(net, args.loss_type, device, test_data, multitask, args.val_batches, title=args.description)
 		print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
 		print('Log_vars: ',  test_results['logvars'])
@@ -383,7 +386,7 @@ def run():
 		writer.add_scalar('test_loss/test_mae', mae, epoch)
 
 		print('Validation results')
-		val_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, grasp_weighting=args.grasp_weight, class_weighting=args.class_weight, title=args.description)
+		val_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, title=args.description)
 
 		print('IoU results %d/%d = %f' % (val_results['graspcorrect'], val_results['graspcorrect'] + val_results['graspfailed'],
 									val_results['graspcorrect']/(val_results['graspcorrect']+val_results['graspfailed'])))

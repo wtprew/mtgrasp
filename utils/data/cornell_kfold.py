@@ -21,7 +21,7 @@ class CornellKDataset(torch.utils.data.Dataset):
 	"""
 	def __init__(self, file_path, json, output_size=300,
 				 random_rotate=False, random_zoom=False, include_rgb=True, include_depth=False,
-				 train=True, shuffle=True, transform=None, train_ids=None, test_ids=None):
+				 shuffle=True, transform=None, ids=None):
 		"""
 		:param file_path: Cornell Dataset directory.
 		:param json: path to coco annotation file
@@ -31,10 +31,7 @@ class CornellKDataset(torch.utils.data.Dataset):
 		self.file_path = file_path
 		self.coco = COCO(json)
 
-		if train:
-			self.ids = train_ids + 1
-		else:
-			self.ids = test_ids + 1
+		self.ids = ids + 1
 
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))

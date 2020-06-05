@@ -21,7 +21,7 @@ class JacquardKDataset(torch.utils.data.Dataset):
 	"""
 	def __init__(self, file_path, output_size=300,
 				 random_rotate=False, random_zoom=False, include_rgb=True, include_depth=False,
-				 train=True, shuffle=True, transform=None, train_ids=None, test_ids=None):
+				 shuffle=True, transform=None, ids=None):
 		"""
 		:param file_path: Jacquard Dataset directory.
 		:param start: If splitting the dataset, split by this fraction [0, 1]
@@ -34,12 +34,8 @@ class JacquardKDataset(torch.utils.data.Dataset):
 		if l == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(file_path))
 		
-		if train == True:
-			train_ids = np.array(train_ids)
-			graspf = [graspf[i] for i in train_ids]
-		else:
-			test_ids = np.array(test_ids)
-			graspf = [graspf[i] for i in test_ids]
+		ids = np.array(ids)
+		graspf = [graspf[i] for i in ids]
 
 		depthf = [f.replace('grasps.txt', 'perfect_depth.tiff') for f in graspf]
 		rgbf = [f.replace('perfect_depth.tiff', 'RGB.png') for f in depthf]

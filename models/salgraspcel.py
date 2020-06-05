@@ -22,7 +22,6 @@ class MultiTaskLoss(nn.Module):
 class CEL(nn.Module):
     def __init__(self):
         super(CEL, self).__init__()
-        print("You are using `CEL`!")
         self.eps = 1e-6
     
     def forward(self, pred, target):
@@ -83,7 +82,7 @@ class SGCNN(nn.Module):
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
-	def compute_loss(self, xc, target, yc, grasp_weight=1.0, class_weight=1.0):
+	def compute_loss(self, xc, target, yc):
 		"""
 		xc: prediction from network
 		yc: ground truth in same order as xc
@@ -107,8 +106,8 @@ class SGCNN(nn.Module):
 
 		return {
 			'loss': {
-				'grasp': grasp_weight*(p_loss + cos_loss + sin_loss + width_loss),
-				'class': class_weight*(class_loss)
+				'grasp': p_loss + cos_loss + sin_loss + width_loss,
+				'class': class_loss
 			},
 			'losses': {
 				'p_loss': p_loss,
