@@ -10,7 +10,7 @@ class JacquardDataset(GraspDatasetBase):
 	"""
 	Dataset wrapper for the Jacquard dataset.
 	"""
-	def __init__(self, file_path, train=True, ids=None, **kwargs):
+	def __init__(self, file_path, ids=None, **kwargs):
 		"""
 		:param file_path: Jacquard Dataset directory.
 		:param train: set proportion of data to return

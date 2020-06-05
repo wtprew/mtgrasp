@@ -206,8 +206,8 @@ def run():
 
 	train_dataset = Dataset(args.dataset_path,
 							random_rotate=True, random_zoom=True,
-							include_depth=args.use_depth, include_rgb=args.use_rgb, train=True,
-							train_ids=train_indices)
+							include_depth=args.use_depth, include_rgb=args.use_rgb,
+							ids=train_indices)
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
 		batch_size=args.batch_size,
@@ -225,7 +225,7 @@ def run():
 	val_dataset = Dataset(args.dataset_path,
 						  random_rotate=True, random_zoom=True,
 						  include_depth=args.use_depth, include_rgb=args.use_rgb,
-						  train=False, test_ids=val_indices
+						  ids=val_indices
 						  )
 	val_data = torch.utils.data.DataLoader(
 		val_dataset,
