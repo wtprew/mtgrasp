@@ -312,7 +312,7 @@ def run():
 	plt.ylabel('loss')
 	plt.legend()
 	plt.savefig(os.path.join(save_folder, 'Loss'))
-	plt.close()
+	plt.close('all')
 
 if __name__ == '__main__':
 	run()

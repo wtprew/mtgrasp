@@ -222,8 +222,10 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 			optimizer.zero_grad()
 			if loss_type == 'grasp':
 				grasploss.backward()
+				results['loss'] += grasploss.item()
 			elif loss_type == 'class':
 				classloss.backward()
+				results['loss'] += classloss.item()
 			elif loss_type == 'combined':
 				loss = grasploss + classloss
 				results['loss'] += loss.item()
@@ -428,7 +430,7 @@ def run():
 		writer.flush()
 
 		fig.savefig(os.path.join(save_folder, 'Epoch'+str(epoch)))
-		plt.close(fig)
+		plt.close('all')
 
 	plt.figure(figsize=(20,20))
 	plt.plot(test_loss, label='Test loss')
@@ -437,7 +439,7 @@ def run():
 	plt.ylabel('loss')
 	plt.legend()
 	plt.savefig(os.path.join(save_folder, 'Loss'))
-	plt.close()
+	plt.close('all')
 
 	for i in best_iou:
 		print('Best IOU score')
