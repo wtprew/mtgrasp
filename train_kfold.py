@@ -222,9 +222,11 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 			optimizer.zero_grad()
 			if loss_type == 'grasp':
 				grasploss.backward()
+				loss = grasploss
 				results['loss'] += grasploss.item()
 			elif loss_type == 'class':
 				classloss.backward()
+				loss = classloss
 				results['loss'] += classloss.item()
 			elif loss_type == 'combined':
 				loss = grasploss + classloss
