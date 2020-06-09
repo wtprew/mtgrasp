@@ -40,21 +40,22 @@ class MTGCNN(nn.Module):
 		x = F.relu(self.conv1(x))
 		x = F.relu(self.conv2(x))
 		x = F.relu(self.conv3(x))
-		x = F.relu(self.convt1(x))
-		x = F.relu(self.convt2(x))
-		x = F.relu(self.convt3(x))
+		
+		g = F.relu(self.convt1(x))
+		g = F.relu(self.convt2(g))
+		g = F.relu(self.convt3(g))
 
-		pos_output = self.pos_output(x)
-		cos_output = self.cos_output(x)
-		sin_output = self.sin_output(x)
-		width_output = self.width_output(x)
+		pos_output = self.pos_output(g)
+		cos_output = self.cos_output(g)
+		sin_output = self.sin_output(g)
+		width_output = self.width_output(g)
 
 		#linear layers for classification
-		y = self.class_conv(x)
-		y = torch.flatten(y, 1)
-		y = F.relu(self.linear1(y))
-		y = F.relu(self.linear2(y))
-		class_out = self.class_output(y)
+		c = self.class_conv(x)
+		c = torch.flatten(c, 1)
+		c = F.relu(self.linear1(c))
+		c = F.relu(self.linear2(c))
+		class_out = self.class_output(c)
 		class_out = F.log_softmax(class_out, dim=1)
 
 		return pos_output, cos_output, sin_output, width_output, class_out

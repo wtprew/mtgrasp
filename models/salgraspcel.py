@@ -61,23 +61,24 @@ class SGCNN(nn.Module):
 		self.cel = CEL()
 
 	def forward(self, x):
-		#shared network
+		#shared features
 		x = F.relu(self.conv1(x))
 		x = F.relu(self.conv2(x))
 		y = F.relu(self.conv3(x))
-		x = F.relu(self.convt1(y))
-		x = F.relu(self.convt2(x))
-		x = F.relu(self.convt3(x))
+		
+		g = F.relu(self.convt1(y))
+		g = F.relu(self.convt2(g))
+		g = F.relu(self.convt3(g))
 
-		pos_output = self.pos_output(x)
-		cos_output = self.cos_output(x)
-		sin_output = self.sin_output(x)
-		width_output = self.width_output(x)
+		pos_output = self.pos_output(g)
+		cos_output = self.cos_output(g)
+		sin_output = self.sin_output(g)
+		width_output = self.width_output(g)
 
-		z = F.relu(self.convt4(y))
-		z = F.relu(self.convt5(z))
-		z = F.relu(self.convt6(z))
-		class_out = self.class_conv(z)
+		s = F.relu(self.convt4(y))
+		s = F.relu(self.convt5(s))
+		s = F.relu(self.convt6(s))
+		class_out = self.class_conv(s)
 		class_out = self.sigmoid(class_out)
 
 		return pos_output, cos_output, sin_output, width_output, class_out

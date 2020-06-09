@@ -91,15 +91,15 @@ class SGCNN2(nn.Module):
 		#shared network
 		x = self.features(x)
 
-		y = self.grasps(x)
-		z = self.saliency(x)
+		g = self.grasps(x)
+		s = self.saliency(x)
 
-		pos_output = self.pos_output(y)
-		cos_output = self.cos_output(y)
-		sin_output = self.sin_output(y)
-		width_output = self.width_output(y)
+		pos_output = self.pos_output(g)
+		cos_output = self.cos_output(g)
+		sin_output = self.sin_output(g)
+		width_output = self.width_output(g)
 
-		class_out = self.class_out(z)
+		class_out = self.class_out(s)
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 

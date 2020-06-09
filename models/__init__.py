@@ -27,6 +27,15 @@ def get_network(network_name):
     elif network_name == 'sg2':
         from .salgrasp2 import SGCNN2
         return SGCNN2
+    elif network_name == 'sg2_a':
+        from .salgrasp2_a import SGCNN2
+        return SGCNN2
+    elif network_name == 'sg2_b':
+        from .salgrasp2_b import SGCNN2
+        return SGCNN2
+    elif network_name == 'sg2_s':
+        from .salgrasp2_separated import SGCNN2
+        return SGCNN2
     elif network_name == 'cel':
         from .salgraspcel import SGCNN
         return SGCNN
