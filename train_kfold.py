@@ -288,11 +288,16 @@ def run():
 	device = torch.device("cuda:0")
 	net = net.to(device)
 
+	multitask = None
+
 	if args.loss_type == 'kendall':
 		multitask = MultiTaskLoss(2).to(device)
 		parameters = list(net.parameters()) + list(multitask.parameters())
+	elif args.loss_type == 'grasp':
+		parameters = list(net.features.parameters()) + list(net.grasps.parameters())
+	elif args.loss_type == 'class':
+		parameters = list(net.features.parameters()) + list(net.saliency.parameters())
 	else:
-		multitask = None
 		parameters = list(net.parameters())
 	optimizer = optim.Adam(parameters)
 	print('Done')
@@ -313,11 +318,11 @@ def run():
 		print('Training dataset loading')
 		train_dataset = JacquardKDataset(args.dataset_path,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, shuffle=args.shuffle, 
+							include_rgb=args.use_rgb, shuffle=args.shuffle,
 							transform=transformations, ids=train_indices)
 		val_dataset = JacquardKDataset(args.dataset_path,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, shuffle=args.shuffle, 
+							include_rgb=args.use_rgb, shuffle=args.shuffle,
 							transform=transformations, ids=val_indices)
 	else:
 		print('Training dataset loading')
