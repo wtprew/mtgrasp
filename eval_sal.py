@@ -13,7 +13,6 @@ from utils.metric import AvgMeter, cal_maxf, cal_pr_mae_meanf
 
 logging.basicConfig(level=logging.INFO)
 
-
 def parse_args():
 	parser = argparse.ArgumentParser(description='Evaluate SG-CNN')
 
@@ -54,27 +53,28 @@ if __name__ == '__main__':
 	device = torch.device("cuda:0")
 
 	# Load Dataset
-	logging.info('Loading {} Dataset...'.format(args.dataset.title()))
+	print('Loading {} Dataset...'.format(args.dataset.title()))
 	Dataset = get_dataset(args.dataset)
 	transformations = transforms.Compose([transforms.ToTensor()])
 
-	if args.dataset == 'jacquard_sal':
-		test_dataset = Dataset(args.dataset_path, split=args.split,
+	if args.dataset == 'jacquard_skfold':
+		test_dataset = Dataset(args.dataset_path,
 							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
-							transform=transformations, seed=args.random_seed)
+							include_rgb=args.use_rgb, shuffle=args.shuffle,
+							transform=transformations)
 	else:
-		test_dataset = Dataset(args.dataset_path, json=args.json, split=args.split,
+		test_dataset = Dataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, train=False, shuffle=args.shuffle,
-							transform=transformations, seed=args.random_seed)
+							include_rgb=args.use_rgb, shuffle=args.shuffle,
+							transform=transformations)
 
 	test_data = torch.utils.data.DataLoader(
 		test_dataset,
 		batch_size=1,
 		shuffle=False,
 		num_workers=args.num_workers)
-	logging.info('Done')
+	
+	print('Done')
 
 	results = {'grasp':{'correct': 0, 'failed': 0}, 'maxf': 0, 'meanf': 0, 'mae': 0}
 	ld = len(test_data)
@@ -90,7 +90,7 @@ if __name__ == '__main__':
 
 	with torch.no_grad():
 		for idx, (x, targets, y, didx, rot, zoom) in enumerate(test_data):
-			logging.info('Processing {}/{}'.format(idx+1, len(test_data)))
+			print(f'Processing {idx+1}/{len(test_data)}', end='\r')
 			xc = x.to(device)
 			target = targets.to(device)
 			yc = [yi.to(device) for yi in y]
@@ -127,4 +127,4 @@ if __name__ == '__main__':
 						results['grasp']['correct'] / (results['grasp']['correct'] + results['grasp']['failed'])))
 
 	if args.jacquard_output:
-		logging.info('Jacquard output saved to {}'.format(jo_fn))
+		print('Jacquard output saved to {}'.format(jo_fn))

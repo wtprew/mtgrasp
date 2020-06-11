@@ -26,8 +26,11 @@ class JacquardDataset(GraspDatasetBase):
 		if l == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(file_path))
 
-		ids = np.array(ids)
-		graspf = [graspf[i] for i in ids]
+		if ids is not None:
+			ids = np.array(ids)
+			graspf = [graspf[i] for i in ids]
+		else:
+			graspf = list(graspf)
 
 		depthf = [f.replace('grasps.txt', 'perfect_depth.tiff') for f in graspf]
 		rgbf = [f.replace('perfect_depth.tiff', 'RGB.png') for f in depthf]

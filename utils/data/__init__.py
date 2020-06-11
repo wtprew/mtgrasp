@@ -5,9 +5,15 @@ def get_dataset(dataset_name):
     elif dataset_name == 'jacquard':
         from .jacquard_data import JacquardDataset
         return JacquardDataset
+    elif dataset_name == 'cornell_skfold':
+        from .cornell_kfold import CornellKDataset
+        return CornellKDataset
     elif dataset_name == 'jacquard_kfold':
         from .jacquard_data_kfold import JacquardDataset
         return JacquardDataset
+    elif dataset_name == 'jacquard_skfold':
+        from .jacquard_kfold import JacquardKDataset
+        return JacquardKDataset
     elif dataset_name == 'cornell_class':
         from .cornell_class import CornellCocoDataset
         return CornellCocoDataset

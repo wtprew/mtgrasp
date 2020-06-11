@@ -31,7 +31,10 @@ class CornellKDataset(torch.utils.data.Dataset):
 		self.file_path = file_path
 		self.coco = COCO(json)
 
-		self.ids = ids + 1
+		if ids is not None:
+			self.ids = ids + 1
+		else:
+			self.ids = self.coco.getImgIds()
 
 		if len(self.ids) == 0:
 			raise FileNotFoundError('No dataset files found. Check path: {}'.format(json))
