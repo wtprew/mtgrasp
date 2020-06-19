@@ -4,6 +4,7 @@ import logging
 import torch.utils.data
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
+import json
 
 from models.common import post_process_output
 from utils.data import get_dataset
@@ -25,7 +26,7 @@ def parse_args():
 	parser.add_argument('--use-depth', type=int, default=1, help='Use Depth image for evaluation (1/0)')
 	parser.add_argument('--use-rgb', type=int, default=0, help='Use RGB image for evaluation (0/1)')
 	parser.add_argument('--augment', action='store_true', help='Whether data augmentation should be applied')
-	parser.add_argument('--split', type=float, default=0.9, help='Fraction of data for training (remainder is validation)')
+	parser.add_argument('--ksplit', type=int, default=0, help='Split of data for validation)')
 	parser.add_argument('--random-seed', type=int, default=42, help='random seed for splitting the dataset into train and test sets')
 	parser.add_argument('--shuffle', action='store_true', help='shuffle dataset before splitting')
 	parser.add_argument('--num-workers', type=int, default=8, help='Dataset workers')
@@ -57,16 +58,21 @@ if __name__ == '__main__':
 	Dataset = get_dataset(args.dataset)
 	transformations = transforms.Compose([transforms.ToTensor()])
 
-	if args.dataset == 'jacquard_skfold':
-		test_dataset = Dataset(args.dataset_path,
-							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
-							include_rgb=args.use_rgb, shuffle=args.shuffle,
-							transform=transformations)
-	else:
+	print(f'Loading {args.ksplit} split...')
+	f = json.load(open('k_split_indices.txt', 'rb'))
+	val_indices = f[str(args.ksplit)]['val']
+
+	if args.dataset == 'cornell':
 		test_dataset = Dataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle,
 							transform=transformations)
+	else:
+		test_dataset = Dataset(args.dataset_path,
+							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
+							include_rgb=args.use_rgb, shuffle=args.shuffle,
+							transform=transformations)
+
 
 	test_data = torch.utils.data.DataLoader(
 		test_dataset,
@@ -89,11 +95,11 @@ if __name__ == '__main__':
 			pass
 
 	with torch.no_grad():
-		for idx, (x, targets, y, didx, rot, zoom) in enumerate(test_data):
+		for idx, (x, y, targets, didx, rot, zoom) in enumerate(test_data):
 			print(f'Processing {idx+1}/{len(test_data)}', end='\r')
 			xc = x.to(device)
-			target = targets.to(device)
 			yc = [yi.to(device) for yi in y]
+			target = targets.to(device)
 			lossd = net.compute_loss(xc, target, yc)
 
 			grasploss = lossd['loss']['grasp']

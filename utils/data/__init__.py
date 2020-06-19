@@ -14,6 +14,9 @@ def get_dataset(dataset_name):
     elif dataset_name == 'jacquard_skfold':
         from .jacquard_kfold import JacquardKDataset
         return JacquardKDataset
+    elif dataset_name == 'jacquard_depth':
+        from .jacquard_kfold_depth import JacquardKDataset
+        return JacquardKDataset
     elif dataset_name == 'cornell_class':
         from .cornell_class import CornellCocoDataset
         return CornellCocoDataset

@@ -90,13 +90,6 @@ class JacquardKDataset(torch.utils.data.Dataset):
 			rgb_img.img = rgb_img.img.transpose((2, 0, 1))
 		return rgb_img.img
 
-	def get_sal(self, idx, rot=0, zoom=1.0):
-		sal_img = image.Image.from_file(self.saliency_files[idx])
-		sal_img.rotate(rot)
-		sal_img.zoom(zoom)
-		sal_img.resize((self.output_size, self.output_size))
-		return sal_img.img
-
 	def get_jname(self, idx):
 		return '_'.join(self.grasp_files[idx].split(os.sep)[-1].split('_')[:-1])
 
@@ -113,38 +106,26 @@ class JacquardKDataset(torch.utils.data.Dataset):
 			zoom_factor = 1.0
 
 		# Load the depth image
-		if self.include_depth:
-			depth_img = self.get_depth(idx, rot, zoom_factor)
+		depth_img = self.get_depth(idx, rot, zoom_factor)
 
 		# Load the RGB image
-		if self.include_rgb:
-			rgb_img = self.get_rgb(idx, rot, zoom_factor, normalise=False)
-
-		sal_img = self.get_sal(idx, rot, zoom_factor)
-
+		rgb_img = self.get_rgb(idx, rot, zoom_factor, normalise=False)
+  
 		# Load the grasps
 		graspbbs = self.get_gtbb(idx, rot, zoom_factor)
 
 		pos_img, ang_img, width_img = graspbbs.draw((self.output_size, self.output_size))
 		width_img = np.clip(width_img, 0.0, 150.0)/150.0
 
-		if self.include_depth and self.include_rgb:
-			rgb_img = self.transform(rgb_img)
-			depth_img = self.transform(depth_img)
-			x = torch.cat([depth_img, rgb_img], 0)
-		elif self.include_depth:
-			x = self.transform(depth_img)
-		elif self.include_rgb:
-			x = self.transform(rgb_img)
+		depth = self.transform(depth_img)
+		x = self.transform(rgb_img)
 
 		pos = self.transform(pos_img.astype(np.float32))
 		cos = self.transform(np.cos(2*ang_img).astype(np.float32))
 		sin = self.transform(np.sin(2*ang_img).astype(np.float32))
 		width = self.transform(width_img.astype(np.float32))
 
-		target = self.transform(sal_img)
-
-		return x, (pos, cos, sin, width), target, idx, rot, zoom_factor
+		return x, (pos, cos, sin, width), depth, idx, rot, zoom_factor
 
 	def __len__(self):
 		return len(self.grasp_files)

@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import json
 import logging
 import os
 import sys
@@ -12,23 +13,21 @@ import torch.optim as optim
 import torch.utils.data
 import torchvision
 import torchvision.transforms as transforms
-from tensorboard.plugins import projector
+from sklearn.model_selection import KFold
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
 
 from models import get_network
 from models.common import post_process_output
 from models.salgrasp import MultiTaskLoss
-from utils.data.jacquard_sal import JacquardSalDataset
-from utils.data.cornell_sal import CornellSalDataset
-from utils.data.jacquard_kfold import JacquardKDataset
-from utils.data.cornell_kfold import CornellKDataset
+from tensorboard.plugins import projector
+from utils.data import get_dataset
 from utils.dataset_processing import evaluation
 from utils.dataset_processing.grasp import visualise_output
-from utils.visualisation.confusion import plot_confusion_matrix, count_elements, histogram_plot
+from utils.metric import AvgMeter, cal_maxf, cal_pr_mae_meanf
+from utils.visualisation.confusion import (count_elements, histogram_plot,
+                                           plot_confusion_matrix)
 from utils.visualisation.gridshow import gridshow
-from utils.metric import cal_pr_mae_meanf, cal_maxf, AvgMeter
-from sklearn.model_selection import KFold
 
 # cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
 
@@ -106,10 +105,10 @@ def validate(net, loss_type, device, val_data, mt, batches_per_epoch, title=None
 	with torch.no_grad():
 		batch_idx = 0
 		while batch_idx < batches_per_epoch:
-			for x, targets, y, didx, rot, zoom_factor in val_data:
+			for x, y, targets, didx, rot, zoom_factor in val_data:
 				batch_idx += 1
-				if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
-					break
+				# if batches_per_epoch is not None and batch_idx >= batches_per_epoch:
+				# 	break
 
 				xc = x.to(device)
 				target = targets.to(device)
@@ -196,14 +195,14 @@ def train(epoch, loss_type, net, device, train_data, mt, optimizer, batches_per_
 	batch_idx = 0
 	# Use batches per epoch to make training on different sized datasets (cornell/jacquard) more equivalent.
 	while batch_idx < batches_per_epoch:
-		for x, targets, y, _, _, _ in train_data:
+		for x, y, targets, _, _, _ in train_data:
 			batch_idx += 1
 			if batch_idx >= batches_per_epoch:
 				break
 
 			xc = x.to(device)
-			target = targets.to(device)
 			yc = [yy.to(device) for yy in y]
+			target = targets.to(device)
 			lossd = net.compute_loss(xc, target, yc)
 
 			if loss_type == 'kendall':
@@ -269,13 +268,12 @@ def run():
 
 	# Load Dataset
 	print('Loading {} Dataset...'.format(args.dataset.title()))
-	# Dataset = get_dataset(args.dataset)
+	Dataset = get_dataset(args.dataset)
 
-	import json
 	print(f'Loading {args.ksplit} split...')
 	f = json.load(open('k_split_indices.txt', 'rb'))
 	train_indices = f[str(args.ksplit)]['train']
-	val_indices = f[str(args.ksplit)]['val']
+	test_indices = f[str(args.ksplit)]['test']
 
 	input_channels = 1*args.use_depth + 3*args.use_rgb
 	transformations = transforms.Compose([transforms.ToTensor()])
@@ -314,26 +312,26 @@ def run():
 	best_meanf = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
 	best_mae = {'epoch': 0, 'iou': 0.0, 'maxf': 0.0, 'meanf': 0.0, 'mae': 0.0,}
 
-	if args.dataset == 'jacquard':
+	if args.dataset == 'cornell':
 		print('Training dataset loading')
-		train_dataset = JacquardKDataset(args.dataset_path,
+		train_dataset = Dataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle,
 							transform=transformations, ids=train_indices)
-		val_dataset = JacquardKDataset(args.dataset_path,
+		test_dataset = Dataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle,
-							transform=transformations, ids=val_indices)
+							transform=transformations, ids=test_indices)
 	else:
 		print('Training dataset loading')
-		train_dataset = CornellKDataset(args.dataset_path, json=args.json,
+		train_dataset = Dataset(args.dataset_path,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle, 
 							transform=transformations, ids=train_indices)
-		val_dataset = CornellKDataset(args.dataset_path, json=args.json,
+		test_dataset = Dataset(args.dataset_path, 
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle, 
-							transform=transformations, ids=val_indices)
+							transform=transformations, ids=test_indices)
 
 	train_data = torch.utils.data.DataLoader(
 		train_dataset,
@@ -343,22 +341,16 @@ def run():
 	)
 
 	test_data = torch.utils.data.DataLoader(
-		train_dataset,
+		test_dataset,
 		batch_size=1,
 		shuffle=True,
 		num_workers=args.num_workers
 	)
 
-	val_data = torch.utils.data.DataLoader(
-		val_dataset,
-		batch_size=1,
-		shuffle=False,
-		num_workers=args.num_workers
-	)
 	print('Done')
 	
+	train_loss = []
 	test_loss = []
-	val_loss = []
 
 	for epoch in range(args.epochs):
 		print('Beginning Epoch {:02d}'.format(epoch))
@@ -395,32 +387,11 @@ def run():
 		writer.add_scalar('test_loss/test_mae', mae, epoch)
 		writer.add_scalar('loss/test_loss', test_results['loss'], epoch)
 
-		print('Validation results')
-		val_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, title=args.description)
-
-		print('IoU results %d/%d = %f' % (val_results['graspcorrect'], val_results['graspcorrect'] + val_results['graspfailed'],
-									val_results['graspcorrect']/(val_results['graspcorrect']+val_results['graspfailed'])))
-		print('Log_vars: ',  val_results['logvars'])
-		maxf = val_results['maxf']
-		meanf = val_results['meanf']
-		mae = val_results['mae']
-		print('Maxf: ', maxf, ' Meanf: ', meanf, ' MAE: ', mae)
-
-		# Log validation results to tensorbaord
-		writer.add_scalar('loss/IOU', val_results['graspcorrect'] / (val_results['graspcorrect'] + val_results['graspfailed']), epoch)
-		writer.add_scalar('val_loss/test_class_loss', val_results['classloss'], epoch)
-		writer.add_scalar('val_loss/test_grasp_loss', val_results['grasploss'], epoch)
-		writer.add_scalar('val_loss/test_loss', val_results['loss'], epoch)
-		writer.add_scalar('val_loss/test_maxf', maxf, epoch)
-		writer.add_scalar('val_loss/test_meanf',meanf, epoch)
-		writer.add_scalar('val_loss/test_mae', mae, epoch)
-		writer.add_scalar('loss/val_loss', val_results['loss'], epoch)
-
+		test_loss.append(train_results['loss']/args.batch_size)
 		test_loss.append(test_results['loss'])
-		val_loss.append(val_results['loss'])
 
 		for n, l in test_results['losses'].items():
-			writer.add_scalar('val_loss/' + n, l, epoch)
+			writer.add_scalar('test_loss/' + n, l, epoch)
 
 		# Save best performing network
 		iou = test_results['graspcorrect'] / (test_results['graspcorrect'] + test_results['graspfailed'])
@@ -440,8 +411,8 @@ def run():
 		plt.close('all')
 
 	plt.figure(figsize=(20,20))
+	plt.plot(train_loss, label='Train loss')
 	plt.plot(test_loss, label='Test loss')
-	plt.plot(val_loss, label='Val loss')
 	plt.xlabel('epoch')
 	plt.ylabel('loss')
 	plt.legend()
@@ -462,6 +433,7 @@ def run():
 		print(i, best_mae[i])
 	writer.close()
 
+	print(f'Training time for {args.epochs} epochs: {datetime.datetime.now().strftime("%y%m%d_%H%M") - dt}')
 
 if __name__ == '__main__':
 	run()
