@@ -9,3 +9,4 @@ train_mnist.py
 ncc
 *.ipynb
 .~lock.DataOutput.ods#
+bashscripts

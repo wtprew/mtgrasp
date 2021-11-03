@@ -46,11 +46,14 @@ def plot_confusion_matrix(correct_labels, predict_labels, classes, title='Confus
 
 	return fig
 
-def count_elements(seq, classes) -> dict:
+def count_elements(dataset, classes, key) -> dict:
 	hist = {}
-	for i in seq:
-		cat = i['category_id'] - 1
-		name = classes[cat]
+	for i in dataset.targets:
+		cat = i['category_id']
+		if key == 'supercategory_id':
+			name = dataset.coco.loadCats(cat)[0][str(key[:-3])]
+		else:
+			name = classes[cat - 1]
 		hist[name] = hist.get(name, 0) + 1
 	return hist
 

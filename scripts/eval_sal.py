@@ -60,18 +60,18 @@ if __name__ == '__main__':
 
 	print(f'Loading {args.ksplit} split...')
 	f = json.load(open('k_split_indices.txt', 'rb'))
-	val_indices = f[str(args.ksplit)]['val']
+	test_indices = f[str(args.ksplit)]['test']
 
 	if args.dataset == 'cornell':
 		test_dataset = Dataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle,
-							transform=transformations)
+							transform=transformations, ids=test_indices)
 	else:
 		test_dataset = Dataset(args.dataset_path,
 							random_rotate=True, random_zoom=False, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle,
-							transform=transformations)
+							transform=transformations, ids=test_indices)
 
 
 	test_data = torch.utils.data.DataLoader(

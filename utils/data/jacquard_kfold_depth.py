@@ -21,7 +21,7 @@ class JacquardKDataset(torch.utils.data.Dataset):
 	"""
 	def __init__(self, file_path, output_size=300,
 				 random_rotate=False, random_zoom=False, include_rgb=True, include_depth=False,
-				 shuffle=True, transform=None, ids=None):
+				 shuffle=True, ids=None):
 		"""
 		:param file_path: Jacquard Dataset directory.
 		:param start: If splitting the dataset, split by this fraction [0, 1]
@@ -75,7 +75,7 @@ class JacquardKDataset(torch.utils.data.Dataset):
 	def get_depth(self, idx, rot=0, zoom=1.0):
 		depth_img = image.DepthImage.from_tiff(self.depth_files[idx])
 		depth_img.rotate(rot)
-		depth_img.normalise()
+		# depth_img.normalise()
 		depth_img.zoom(zoom)
 		depth_img.resize((self.output_size, self.output_size))
 		return depth_img.img
@@ -87,7 +87,7 @@ class JacquardKDataset(torch.utils.data.Dataset):
 		rgb_img.resize((self.output_size, self.output_size))
 		if normalise:
 			rgb_img.normalise()
-			rgb_img.img = rgb_img.img.transpose((2, 0, 1))
+			# rgb_img.img = rgb_img.img.transpose((2, 0, 1))
 		return rgb_img.img
 
 	def get_jname(self, idx):
@@ -107,10 +107,8 @@ class JacquardKDataset(torch.utils.data.Dataset):
 
 		# Load the depth image
 		depth_img = self.get_depth(idx, rot, zoom_factor)
-
 		# Load the RGB image
 		rgb_img = self.get_rgb(idx, rot, zoom_factor, normalise=False)
-  
 		# Load the grasps
 		graspbbs = self.get_gtbb(idx, rot, zoom_factor)
 

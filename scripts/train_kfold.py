@@ -318,7 +318,7 @@ def run():
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle,
 							transform=transformations, ids=train_indices)
-		test_dataset = Dataset(args.dataset_path, json=args.json,
+		val_dataset = Dataset(args.dataset_path, json=args.json,
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle,
 							transform=transformations, ids=test_indices)
@@ -328,7 +328,7 @@ def run():
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle, 
 							transform=transformations, ids=train_indices)
-		test_dataset = Dataset(args.dataset_path, 
+		val_dataset = Dataset(args.dataset_path, 
 							random_rotate=True, random_zoom=True, include_depth=args.use_depth,
 							include_rgb=args.use_rgb, shuffle=args.shuffle, 
 							transform=transformations, ids=test_indices)
@@ -340,8 +340,8 @@ def run():
 		num_workers=args.num_workers
 	)
 
-	test_data = torch.utils.data.DataLoader(
-		test_dataset,
+	val_data = torch.utils.data.DataLoader(
+		val_dataset,
 		batch_size=1,
 		shuffle=True,
 		num_workers=args.num_workers
@@ -366,7 +366,7 @@ def run():
 
 		# Run Validation
 		print('Testing...')
-		test_results, fig = validate(net, args.loss_type, device, test_data, multitask, args.val_batches, title=args.description)
+		test_results, fig = validate(net, args.loss_type, device, val_data, multitask, args.val_batches, title=args.description)
 		print('IoU results %d/%d = %f' % (test_results['graspcorrect'], test_results['graspcorrect'] + test_results['graspfailed'],
 									test_results['graspcorrect']/(test_results['graspcorrect']+test_results['graspfailed'])))
 		print('Log_vars: ',  test_results['logvars'])
@@ -387,7 +387,7 @@ def run():
 		writer.add_scalar('test_loss/test_mae', mae, epoch)
 		writer.add_scalar('loss/test_loss', test_results['loss'], epoch)
 
-		test_loss.append(train_results['loss']/args.batch_size)
+		train_loss.append(train_results['loss']/args.batch_size)
 		test_loss.append(test_results['loss'])
 
 		for n, l in test_results['losses'].items():

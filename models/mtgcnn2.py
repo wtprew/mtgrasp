@@ -78,7 +78,8 @@ class MTGCNN2(nn.Module):
 		y = torch.flatten(class_output, 1)
 		y = self.linearlayers(y)
 		y = self.fc(y)
-		class_out = F.sigmoid(y)
+		class_out = F.log_softmax(y, dim=1)
+		# class_out = F.sigmoid(y)
 
 		return pos_output, cos_output, sin_output, width_output, class_out
 
@@ -99,8 +100,8 @@ class MTGCNN2(nn.Module):
 		sin_loss = F.mse_loss(sin_pred, y_sin)
 		width_loss = F.mse_loss(width_pred, y_width)
 
-		# class_loss = F.nll_loss(class_pred, y_class)
-		class_loss = F.mse_loss(class_pred, y_class)
+		class_loss = F.nll_loss(class_pred, y_class)
+		# class_loss = F.mse_loss(class_pred, y_class)
 
 		return {
 			'loss': {
