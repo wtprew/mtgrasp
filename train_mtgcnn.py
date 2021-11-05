@@ -344,8 +344,8 @@ def run():
 		writer.add_image('valexampleimages', grid)
 		print('validation example classes', exampleclasses)
 
-	# Print model architecture.
-	writer.add_graph(net, exampleimages.to(device))
+		# Print model architecture.
+		writer.add_graph(net, exampleimages.to(device))
 	
 	summary(net, (input_channels, 300, 300))
 	f = open(os.path.join(save_folder, 'arch.txt'), 'w')

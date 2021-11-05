@@ -153,13 +153,8 @@ class CornellCocoDataset(torch.utils.data.Dataset):
 		width_img = np.clip(width_img, 0.0, 150.0)/150.0
 
 		if self.include_depth and self.include_rgb:
-			x = self.numpy_to_torch(
-				np.concatenate(
-					(np.expand_dims(depth_img, 0),
-					 rgb_img),
-					0
-				)
-			)
+			x = np.concatenate((np.expand_dims(depth_img, 2), rgb_img), 2).transpose((2, 0, 1))
+			x = self.numpy_to_torch(x)
 		elif self.include_depth:
 			x = self.numpy_to_torch(depth_img)
 		elif self.include_rgb:
