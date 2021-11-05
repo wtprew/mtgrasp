@@ -21,6 +21,7 @@ from utils.data import get_dataset
 from utils.dataset_processing import evaluation
 from utils.visualisation.confusion import plot_confusion_matrix, count_elements, histogram_plot
 from utils.visualisation.gridshow import gridshow
+import matplotlib.pyplot as plt
 
 # cv2.namedWindow('Display', cv2.WINDOW_NORMAL)
 
@@ -324,18 +325,24 @@ def run():
 	writer.add_figure('classfreq/training', train_hist, global_step=0)
 	writer.add_figure('classfreq/testing', test_hist, global_step=0)
 
-	# display a set of example images
-	exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
-	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
-	writer.add_image('trainexampleimages', grid)
-	print('training example classes', exampleclasses)
+	train_hist.savefig('output/figures/train_object_frequency_hist.png')
+	test_hist.savefig('output/figures/test_object_frequency_hist.png')
+	train_hist.savefig('output/figures/train_object_frequency_hist.eps', format='eps')
+	test_hist.savefig('output/figures/test_object_frequency_hist.eps', format='eps')
 
-	exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
-	exampleclasses = [classes[lab] for lab in examplelabels[key]]
-	grid = torchvision.utils.make_grid(exampleimages, normalize=True)
-	writer.add_image('valexampleimages', grid)
-	print('validation example classes', exampleclasses)
+	if args.use_rgb != args.use_depth:
+		# display a set of example images
+		exampleimages, examplelabels, _, _, _, _ = next(iter(train_data))
+		exampleclasses = [classes[lab] for lab in examplelabels[key]]
+		grid = torchvision.utils.make_grid(exampleimages, normalize=True)
+		writer.add_image('trainexampleimages', grid)
+		print('training example classes', exampleclasses)
+	
+		exampleimages, examplelabels, _, _, _, _ = next(iter(val_data))
+		exampleclasses = [classes[lab] for lab in examplelabels[key]]
+		grid = torchvision.utils.make_grid(exampleimages, normalize=True)
+		writer.add_image('valexampleimages', grid)
+		print('validation example classes', exampleclasses)
 
 	# Print model architecture.
 	writer.add_graph(net, exampleimages.to(device))

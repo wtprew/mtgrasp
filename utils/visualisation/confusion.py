@@ -67,7 +67,7 @@ def count_list(l, classes) -> dict:
 def histogram_plot(freq):
 	tick_marks = np.arange(len(freq.keys()))
 
-	fig = matplotlib.figure.Figure(figsize=(7, 7), dpi=320, facecolor='w', edgecolor='k')
+	fig = plt.Figure(figsize=(7, 7), dpi=320, facecolor='w', edgecolor='k')
 	ax = fig.add_subplot(1, 1, 1)
 
 	ax.bar(freq.keys(), freq.values())
